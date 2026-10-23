@@ -2060,10 +2060,10 @@ var PIANCHANG_DD = (function () {
 
 ;
 // ═══════════════════════════════════════════════════════════════════
-// 🎬 声色片场 (pianchang.js)  v0.2.0  2026-10-23  —— 主脚本：开场选身份 + 片场面板（两张脸）
+// 🎬 声色片场 (pianchang.js)  v0.2.1  2026-10-23  —— 主脚本：开场选身份 + 片场面板（两张脸）
 //   ① 开场（v0.1.0 那一片，37 项测试过的，原样并进来）：第 0 楼下面两张招聘通知、锁输入框、选身份、
 //      pianchang-identity 常驻注入（position none + should_scan，点亮 User 身份条目）、一次性开场提示 + /trigger、🎬 重选部门。
-//   ② 片场面板：右边一块可拖的场记板，点开是面板。姐妹卡《声色事务所》社长室的骨架（门牌、顶栏、页签、手机 / 电脑两套布局、
+//   ② 片场面板：右边一块可拖的场记板（选了身份才出来；窄屏默认右下角），点开是面板。姐妹卡《声色事务所》社长室的骨架（门牌、顶栏、页签、手机 / 电脑两套布局、
 //      日历、盯盯、账本），按身份长成两张脸：
 //        导演：日历 · 选角 · 卡司 · 企划 · 试戏 · 片场 · 番市 · 盯盯（部门预算）
 //        男优：通告单 · 片约 · 片场 · 履历 · 钱包 · 盯盯（自己的存款）
@@ -2079,7 +2079,7 @@ var PIANCHANG_DD = (function () {
 (function () {
   'use strict';
   var NS = 'pianchang';
-  var VERSION = '0.2.0';
+  var VERSION = '0.2.1';
   var VAR_KEY = '声色片场';
   var ID_IDENTITY = 'pianchang-identity', ID_OPENING = 'pianchang-opening', ID_RECENT = 'pianchang-recent', ID_SCENE = 'pianchang-scene', ID_SHOOT = 'pianchang-shoot';
   var BTN_RESET = '🎬 重选部门', BTN_PANEL = '🎬 片场';
@@ -3186,9 +3186,24 @@ var PIANCHANG_DD = (function () {
     F + '.shooting .rec{display:block;animation:pcblink 1.2s steps(2,start) infinite;}',
     '@keyframes pcblink{to{visibility:hidden;}}',
     F + '.open .bd{outline:2px solid var(--pc-amber);outline-offset:2px;}',
-    F + '.noid{opacity:.75;}',
+    // 没选身份不出来：手机上它正好压在第一屏「招男优」那张通知上（v0.1.2）。面板照样能从底下「🎬 片场」按钮开
+    F + '.noid{display:none;}',
+    F + ' .s i{font-style:normal;}',
+    F + ' .s .sc{display:none;}',
     F + ' .dd-n{position:absolute;top:-8px;right:-8px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--pc-red);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;display:none;}',
     F + '.dd-lit .dd-n{display:block;}',
+    // 窄屏：缩小一号，默认摆右下角（位置在 defaultFab 里算），小字换短的
+    '@media (max-width:480px){',
+    '  ' + F + '{width:68px;filter:drop-shadow(0 4px 10px rgba(0,0,0,.45));}',
+    '  ' + F + ' .arm{height:11px;margin:0 1px -1px;border-width:1px;background:repeating-linear-gradient(-55deg,#151515 0 6px,#f1ece2 6px 12px);}',
+    '  ' + F + ' .bd{padding:4px 4px 5px;border-width:1px;border-radius:0 0 5px 5px;}',
+    '  ' + F + ' .bd::before{height:4px;background:repeating-linear-gradient(-55deg,#151515 0 6px,#f1ece2 6px 12px);}',
+    '  ' + F + ' .t{margin-top:4px;font-size:14px;letter-spacing:.16em;margin-right:-.16em;}',
+    '  ' + F + ' .s{margin-top:2px;font-size:9.5px;letter-spacing:.02em;}',
+    '  ' + F + ' .s .sf{display:none;}' + F + ' .s .sc{display:inline;}',
+    '  ' + F + ' .rec{right:4px;top:7px;width:6px;height:6px;}',
+    '  ' + F + ' .dd-n{top:-7px;right:-7px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;font-size:10px;line-height:16px;}',
+    '}',
     // 面板外壳：电脑
     P + '{position:fixed;z-index:31001;display:none;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1120px,calc(100vw - 40px));height:min(820px,calc(100vh - 40px));',
     '  background:var(--pc-paper);color:var(--pc-ink);border-radius:12px;box-shadow:var(--pc-shadow);overflow:hidden;font-size:15px;line-height:1.6;border:1px solid #000;',
@@ -3351,16 +3366,19 @@ var PIANCHANG_DD = (function () {
   function tags(list, cls) { return (list || []).map(function (x) { return '<span class="tag' + (cls ? ' ' + cls : '') + '">' + esc(x) + '</span>'; }).join(''); }
 
   var STYLE_EL = DOC.createElement('style'); STYLE_EL.id = PSTYLE_ID; STYLE_EL.textContent = PCSS; (DOC.head || DOC.documentElement).appendChild(STYLE_EL);
-  var FAB = DOC.createElement('div'); FAB.id = FAB_ID; FAB.title = '声色片场（按住可以拖）';
-  FAB.innerHTML = '<div class="arm"></div><div class="bd"><span class="rec"></span><span class="t">片场</span><span class="s">银星映像</span></div><span class="dd-n"></span>';
+  var FAB = DOC.createElement('div'); FAB.id = FAB_ID; FAB.title = '声色片场（按住可以拖）'; FAB.className = 'noid';   // 先藏着，refresh 认出身份再露面
+  FAB.innerHTML = '<div class="arm"></div><div class="bd"><span class="rec"></span><span class="t">片场</span><span class="s"><i class="sf">银星映像</i><i class="sc">银星</i></span></div><span class="dd-n"></span>';
   var PANEL = DOC.createElement('div'); PANEL.id = PANEL_ID;
   DOC.body.appendChild(FAB); DOC.body.appendChild(PANEL);
   function fabRefresh(st) {
     st = st || readState();
-    var id = identity(st), sh = curShoot(st);
-    FAB.classList.toggle('noid', !id);   // 没选身份：场记板照样在，点开只说「先去开场白选部门」
+    var id = identity(st), sh = curShoot(st), wasHidden = FAB.classList.contains('noid');
+    FAB.classList.toggle('noid', !id);   // 没选身份：场记板不出来；底下「🎬 片场」按钮照样开面板，面板里说「先去开场白选部门」
     FAB.classList.toggle('shooting', !!sh);
-    var s = FAB.querySelector('.s'); if (s) s.textContent = sh ? '第 ' + (sh.cur + 1) + ' 场 · NG ' + sh.ng : '第 ' + st.day + ' 天 · ' + C.mdShort(st.day);
+    var sf = FAB.querySelector('.s .sf'), sc = FAB.querySelector('.s .sc');
+    if (sf) sf.textContent = sh ? '第 ' + (sh.cur + 1) + ' 场 · NG ' + sh.ng : '第 ' + st.day + ' 天 · ' + C.mdShort(st.day);
+    if (sc) sc.textContent = sh ? '#' + (sh.cur + 1) + ' · NG ' + sh.ng : '第' + st.day + '天';   // 窄屏那一行只放得下这么多
+    if (id && wasHidden) homeFab();   // 刚露面：藏着的时候量不出尺寸，现在按真尺寸摆一次
   }
 
   function renderHead(st) {
@@ -3718,7 +3736,7 @@ var PIANCHANG_DD = (function () {
   }
 
   function renderNoId() {
-    return '<main class="pc-main"><div class="noid"><b>先去开场白选部门</b><div>翻到第 0 楼开场白，下面钉着两张招聘通知：导演部、男优部。<br>点「申请」入职，场记板这里才会有东西。</div></div></main>';
+    return '<main class="pc-main"><div class="noid"><b>先去开场白选部门</b><div>翻到第 0 楼开场白，下面钉着两张招聘通知：导演部、男优部。<br>点「申请」入职以后，场记板才会出来，这里也才有东西。</div></div></main>';
   }
   function render() {
     if (!PANEL.classList.contains('open')) { fabRefresh(); return; }
@@ -3840,9 +3858,18 @@ var PIANCHANG_DD = (function () {
   });
 
   // ── 场记板：点一下开关，按住拖动，位置记住（照社长室门牌）──
-  var FAB_POS = 'pianchang_fab_pos';
+  // 摆放顺序：拖过的位置（记在 localStorage）> 默认位置。默认：电脑右边偏上；窄屏（≤480）右下角、输入栏上方
+  var FAB_POS = 'pianchang_fab_pos', FAB_DRAG = false;
+  var FAB_SWIPE_GAP = 48;   // 窄屏默认位置离输入栏顶的距离：让开最后一楼右下角的重 roll 箭头和 1/1 计数（酒馆 25 + 15 + 5px）
   function vpW() { var v = VIEW.visualViewport; return (v && v.width) || VIEW.innerWidth || DOC.documentElement.clientWidth || 360; }
   function vpH() { var v = VIEW.visualViewport; return (v && v.height) || VIEW.innerHeight || DOC.documentElement.clientHeight || 640; }
+  function narrowScreen() { try { return VIEW.matchMedia('(max-width:480px)').matches; } catch (e) { return vpW() <= 480; } }   // 跟样式表同一条线
+  function barTop() {   // 输入栏（连上面的快速回复 / 脚本按钮）顶上的 y
+    var ids = ['form_sheld', 'send_form'];
+    for (var i = 0; i < ids.length; i++) { var el = DOC.getElementById(ids[i]); if (!el) continue; var r = el.getBoundingClientRect(); if (r.height > 0 && r.top > 0) return r.top; }
+    return vpH() - 90;
+  }
+  function fabWhere() { return narrowScreen() && !lsGet(FAB_POS) ? '右下角' : '右边'; }
   function placeFab(x, y) {
     var w = FAB.offsetWidth || 96, hh = FAB.offsetHeight || 64;
     var cx = Math.max(4, Math.min(vpW() - w - 4, x)), cy = Math.max(4, Math.min(vpH() - hh - 4, y));
@@ -3851,17 +3878,34 @@ var PIANCHANG_DD = (function () {
     if (!(sx > 0.05)) sx = 1; if (!(sy > 0.05)) sy = 1;
     FAB.style.left = ((cx - r.left) / sx) + 'px'; FAB.style.top = ((cy - r.top) / sy) + 'px';
   }
-  function defaultFab() { placeFab(vpW() - (FAB.offsetWidth || 96) - 12, Math.round(vpH() * 0.24)); }
+  function defaultFab() {
+    var w = FAB.offsetWidth || 96, hh = FAB.offsetHeight || 64;
+    if (narrowScreen()) placeFab(vpW() - w - 6, barTop() - hh - FAB_SWIPE_GAP);   // 手机：不压标题行和正文开头，贴着输入栏往上让一格
+    else placeFab(vpW() - w - 12, Math.round(vpH() * 0.24));
+  }
   function loadFab() { try { var p = JSON.parse(lsGet(FAB_POS) || 'null'); if (p && isFinite(p.x) && isFinite(p.y)) { placeFab(p.x, p.y); return true; } } catch (e) {} return false; }
+  // 藏着（没身份）不摆：量不出尺寸；正在拖也不摆
+  function homeFab() { if (FAB.classList.contains('noid') || FAB_DRAG) return; if (!loadFab()) defaultFab(); }
   (function () {
-    var drag = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
-    FAB.addEventListener('pointerdown', function (e) { drag = true; moved = false; sx = e.clientX; sy = e.clientY; var r = FAB.getBoundingClientRect(); ox = r.left; oy = r.top; try { FAB.setPointerCapture(e.pointerId); } catch (err) {} });
-    FAB.addEventListener('pointermove', function (e) { if (!drag) return; var dx = e.clientX - sx, dy = e.clientY - sy; if (!moved && Math.abs(dx) < 6 && Math.abs(dy) < 6) return; moved = true; placeFab(ox + dx, oy + dy); e.preventDefault(); });
-    FAB.addEventListener('pointerup', function () { if (!drag) return; drag = false; if (moved) { var r = FAB.getBoundingClientRect(); lsSet(FAB_POS, JSON.stringify({ x: r.left, y: r.top })); } else togglePanel(); });
-    FAB.addEventListener('pointercancel', function () { drag = false; });
+    var moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    FAB.addEventListener('pointerdown', function (e) { FAB_DRAG = true; moved = false; sx = e.clientX; sy = e.clientY; var r = FAB.getBoundingClientRect(); ox = r.left; oy = r.top; try { FAB.setPointerCapture(e.pointerId); } catch (err) {} });
+    FAB.addEventListener('pointermove', function (e) { if (!FAB_DRAG) return; var dx = e.clientX - sx, dy = e.clientY - sy; if (!moved && Math.abs(dx) < 6 && Math.abs(dy) < 6) return; moved = true; placeFab(ox + dx, oy + dy); e.preventDefault(); });
+    FAB.addEventListener('pointerup', function () { if (!FAB_DRAG) return; FAB_DRAG = false; if (moved) { var r = FAB.getBoundingClientRect(); lsSet(FAB_POS, JSON.stringify({ x: r.left, y: r.top })); } else togglePanel(); });
+    FAB.addEventListener('pointercancel', function () { FAB_DRAG = false; });
     ['touchstart', 'touchmove', 'touchend'].forEach(function (tn) { FAB.addEventListener(tn, function (e) { e.stopPropagation(); }, { passive: true }); });
   })();
-  function onResize() { var r = FAB.getBoundingClientRect(); placeFab(r.left, r.top); }
+  // 屏幕转向 / 窗口变大小：拖过的按记下的位置重新夹进屏幕（记下的不改），没拖过的重算默认
+  function onResize() { homeFab(); }
+  // 输入框打字变高、快速回复换行：输入栏顶上移了，默认位置跟着走
+  var BAR_RO = null;
+  function watchBar() {
+    try {
+      var bar = DOC.getElementById('form_sheld') || DOC.getElementById('send_form');
+      if (!bar || typeof VIEW.ResizeObserver !== 'function') return;
+      BAR_RO = new VIEW.ResizeObserver(function () { homeFab(); });
+      BAR_RO.observe(bar);
+    } catch (e) { BAR_RO = null; }
+  }
   // ═════════════════════════ 通知（挂在第 0 楼下面）═════════════════════════
   var CSS = [
     '#' + BOARD_ID + '{--pc-ink:#2a2119;--pc-red:#ad2a1f;--pc-red-dk:#6e1711;--pc-frame:#5c3f26;--pc-cork:#a97b4d;',
@@ -4034,11 +4078,11 @@ var PIANCHANG_DD = (function () {
     await save(function (s) { addNews(s, '在' + d.dept + '那张通知上签了字，入职银星映像'); });   // 钱包按身份开出来
     applyRecent(); fabRefresh(); render();   // 面板开着（还是「先去开场白选部门」那一页）就跟着换成这张脸
     if (lastId() !== 0) {   // 老聊天：已经往下走了，不重写开场
-      toast('success', '已入职 · ' + d.dept + '。这个聊天已经往下聊了，开场就不重写了，接着聊就行。右边的场记板是片场面板。');
+      toast('success', '已入职 · ' + d.dept + '。这个聊天已经往下聊了，开场就不重写了，接着聊就行。' + fabWhere() + '的场记板是片场面板。');
       return;
     }
     injectOpening(k);
-    toast('success', '已入职 · ' + d.dept + '，正文接着写下一幕。右边那块场记板点开是片场面板（' + (k === '导演' ? '片场页里给这场挑男优、开机' : '通告单里有今天两点那场') + '）。');
+    toast('success', '已入职 · ' + d.dept + '，正文接着写下一幕。' + fabWhere() + '那块场记板点开是片场面板（' + (k === '导演' ? '片场页里给这场挑男优、开机' : '通告单里有今天两点那场') + '）。');
     try {
       await triggerSlash('/trigger');
     } catch (e) {
@@ -4259,8 +4303,8 @@ var PIANCHANG_DD = (function () {
       else if (typeof replaceScriptButtons === 'function') replaceScriptButtons(btns);
     } catch (e) {}
     try { on(getButtonEvent(BTN_RESET), onReset); } catch (e) {}
-    // 脚本按钮兜底：场记板拖丢了 / 看不见 → 点它复位并开关面板
-    try { on(getButtonEvent(BTN_PANEL), function () { lsDel(FAB_POS); defaultFab(); togglePanel(); }); } catch (e) {}
+    // 脚本按钮兜底：场记板拖丢了 / 看不见 → 点它复位并开关面板（没选身份时场记板藏着，不动它记下的位置，只开面板）
+    try { on(getButtonEvent(BTN_PANEL), function () { if (identity()) { lsDel(FAB_POS); defaultFab(); } togglePanel(); }); } catch (e) {}
   }
 
   var cleaned = false;
@@ -4273,6 +4317,7 @@ var PIANCHANG_DD = (function () {
     try { if (DD) DD.cleanup(); } catch (e) {}
     try { uninjectPrompts([ID_IDENTITY, ID_OPENING, ID_RECENT, ID_SCENE, ID_SHOOT]); } catch (e) {}
     try { VIEW.removeEventListener('resize', onResize); } catch (e) {}
+    try { if (BAR_RO) BAR_RO.disconnect(); } catch (e) {} BAR_RO = null;
     [BOARD_ID, STYLE_ID, FAB_ID, PANEL_ID, PSTYLE_ID].forEach(function (id) { var el = DOC.getElementById(id); if (el) el.remove(); });
     if (VIEW[INSTANCE_KEY] === cleanup) VIEW[INSTANCE_KEY] = null;
   }
@@ -4285,8 +4330,9 @@ var PIANCHANG_DD = (function () {
   applyIdentityInjection();
   applyScene(); applyShoot(); applyRecent();
   refresh();
-  if (!loadFab()) defaultFab();
+  homeFab();   // 有身份：按记下的 / 默认位置摆；没身份藏着，入职那一下 fabRefresh 再摆
   try { VIEW.addEventListener('resize', onResize); } catch (e) {}
+  watchBar();
   ddBadge();
   setTimeout(hintOldChat, 800);
 
