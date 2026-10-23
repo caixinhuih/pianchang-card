@@ -2199,12 +2199,30 @@ var PIANCHANG_DD = (function () {
     a.stageName = ''; a.checkupUntil = day + L.actor0.checkupDays; a.transit = []; a.films = []; a.scripts = []; a.shoot = null; a.guarantee = null;
     var ngAll = C.poolOf('ng', 4).filter(function (x) { return /^男优 NG/.test(x); });
     a.ng = ngAll.slice(0, 3); a.ngGone = [];
+    // 通告单上的「企划 / 演谁」照剧本库那部写，跟进棚以后喂进正文的本子对得上
+    var lib0 = (C.GRID.library || []).filter(function (l) { return l.id === 'lib4'; })[0], p0 = lib0 ? C.parseScript(lib0.text) : null;
     a.offers = [{
       id: 'g_first', studio: '银星映像', studioId: 'yinxing', kind: 'studio', director: '尹椿', day: day, time: '14:00', where: '三号棚',
       tier: 'R18 常见XP', lineup: '一男一女', costar: '江蜜', costarId: 'c_jiangmi', costarNg: L.cast0[1].ng.slice(), costarXp: L.cast0[1].xp.slice(),
-      plan: '温泉不伦旅行：两天一夜', role: '帮她涂防晒的救生员', pay: 30000, scriptId: 'lib4', status: 'accepted', first: true,
+      plan: p0 && p0.ok ? '《' + p0.title + '》' + (p0.head['卖点'] || '') : '《退不掉的温泉》', role: (p0 && p0.ok && libRole(p0)) || '郭涛（31，市民泳池的救生员）',
+      pay: 30000, scriptId: 'lib4', status: 'accepted', first: true,
     }];
     return a;
+  }
+  // 剧本库那部里玩家演的人：「角色：」行里带「男优位·主」（second = true 找「男优位·二」）的那一段，去掉位置标记
+  function libRole(parsed, second) {
+    var mark = second ? '男优位·二' : '男优位·主';
+    var all = String((parsed && parsed.head && parsed.head['角色']) || ''), segs = [], cur = '', depth = 0;
+    for (var i = 0; i < all.length; i++) {   // 按「；」切，括号里的「；」不算（有的人物介绍里自带分号）
+      var ch = all[i];
+      if (ch === '（' || ch === '(') depth++;
+      else if ((ch === '）' || ch === ')') && depth > 0) depth--;
+      if ((ch === '；' || ch === ';') && depth === 0) { segs.push(cur); cur = ''; } else cur += ch;
+    }
+    segs.push(cur);
+    var seg = segs.filter(function (x) { return x.indexOf(mark) >= 0; })[0];
+    if (!seg || seg.indexOf('＝') < 0) return '';
+    return seg.slice(seg.indexOf('＝') + 1).replace(new RegExp(mark + '[，,、]?\\s*'), '').replace(/（\s*）/, '').trim();
   }
   function normState(s) {
     s = obj(s);
@@ -2635,7 +2653,7 @@ var PIANCHANG_DD = (function () {
       director: stu.kind === 'creator' ? owner : C.pick(stu.director), day: s.day + 1 + C.randInt(4), time: C.pick(['10:00', '13:00', '14:00', '19:00']),
       where: C.pick(stu.where), tier: tier, lineup: lineup, costar: co.name, costarId: co.id,
       costarNg: co.ng ? co.ng.slice() : C.drawNG(ti, 1 + C.randInt(2)), costarXp: co.xp ? co.xp.slice() : C.drawXP(ti, 1),
-      plan: libParsed ? '《' + libParsed.title + '》' + plan : plan, role: C.pick(C.poolOf('he', ti)) || '',
+      plan: libParsed ? '《' + libParsed.title + '》' + plan : plan, role: (libParsed && libRole(libParsed)) || C.pick(C.poolOf('he', ti)) || '',
       pay: C.gigPay(fame, tier, stu.payMul) + (lineup !== '一男一女' ? 8000 : 0), scriptId: libPick ? libPick.id : '', status: 'open',
     };
     if (lineup === '两男一女') { var a2 = C.pick(L.actors); g.second = a2.name; }
