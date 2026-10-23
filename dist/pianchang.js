@@ -2582,11 +2582,14 @@ var PIANCHANG_ONLINE = (function () {
   async function saveStage(v) {
     v = String(v || '').replace(/\s+/g, '').slice(0, 6);
     if (!v) return;
-    var ep = epoch();
+    var ep = epoch(), seq = M.stageSeq = (M.stageSeq || 0) + 1;
+    function stale() { return seq !== M.stageSeq; }   // 又点了一次「定了」：以后面那次为准，前一次的结果不往界面上写（10-23 真酒馆实测抓到的）
     M.err.stage = '';
     if (M.inited && !isOff() && await ping()) {
+      if (stale()) return;
       M.busy.stage = true; rerender();
       var r = await claim('男优', v);
+      if (stale()) return;
       M.busy.stage = false;
       if (r.ok) {
         await saveIf(ep, function (s) { ctx().addNews(s, '艺名定了：「' + r.name + '」（联机男优榜上也是这个名字）'); });
@@ -2596,6 +2599,7 @@ var PIANCHANG_ONLINE = (function () {
       }
       if (!r.offline) { M.err.stage = r.msg; rerender(); toast('warning', r.msg); return; }
     }
+    if (stale()) return;
     await saveIf(ep, function (s) { s.act.stageName = v; ctx().addNews(s, '艺名定了：「' + v + '」'); });
     toast('success', '艺名：' + v + (isOff() ? '' : '（联机番市连不上，先存在本地；连上以后自动去认领）'));
     rerender();
@@ -4949,18 +4953,53 @@ var PIANCHANG_ONLINE = (function () {
   function renderNoId() {
     return '<main class="pc-main"><div class="noid"><b>先去开场白选部门</b><div>翻到第 0 楼开场白，下面钉着两张招聘通知：导演部、男优部。<br>点「申请」入职以后，场记板才会出来，这里也才有东西。</div></div></main>';
   }
+  // 重画会把面板整个 innerHTML 换掉：打开着的下拉框当场收起、正在打的字丢掉。
+  // 所以：用户自己点 / 选 / 打字引起的重画照常（USER_ACT）；后台来的重画（写完剧本、联机回包、盯盯来消息……）
+  // 碰上面板里有下拉框 / 输入框正拿着焦点，就先记一笔，等它失焦或选完再画
+  // 「用完了」的那个框（DONE_EL）不拦：下拉框已经选过（change）、输入框按过回车、或者手指已经去点别的东西了——
+  // 这时候后面跟着的重画（换排序以后拉列表、签约存完档）是她要的结果，照常画
+  var USER_ACT = false, HOLD = null, HOLD_PEND = false, PTR_DOWN = false, DONE_EL = null;
+  function userAct(e) {
+    USER_ACT = true; setTimeout(function () { USER_ACT = false; }, 0);
+    var tn = e && e.type, tg = e && e.target;
+    if (tn === 'change' || (tn === 'keydown' && e.key === 'Enter')) DONE_EL = tg;
+    else if (tn === 'click') { var a = DOC.activeElement; if (a && a !== tg && !(a.contains && a.contains(tg))) DONE_EL = a; }
+  }
+  function focusIn(e) { if (e.target !== DONE_EL) DONE_EL = null; }
+  function focusHold() {
+    var a = DOC.activeElement; if (!a || a === PANEL || !PANEL.contains(a) || a === DONE_EL) return null;
+    var tg = a.tagName;
+    if (tg === 'SELECT' || tg === 'TEXTAREA') return a;
+    if (tg === 'INPUT' && !/^(button|submit|reset|checkbox|radio|range|color|file|image)$/i.test(a.type || '')) return a;
+    return null;
+  }
+  function flushHold() {
+    if (!HOLD_PEND) return;
+    if (PTR_DOWN) { setTimeout(flushHold, 120); return; }   // 手指 / 鼠标还按着：等这一下点完，别把它要点的按钮换掉
+    HOLD_PEND = false; render();
+  }
+  function holdRender(a) {
+    HOLD_PEND = true;
+    if (HOLD === a) return;
+    HOLD = a;
+    var go = function () { a.removeEventListener('blur', go); a.removeEventListener('change', go); if (HOLD === a) HOLD = null; setTimeout(flushHold, 0); };
+    a.addEventListener('blur', go); a.addEventListener('change', go);
+  }
   function render() {
     if (!PANEL.classList.contains('open')) { fabRefresh(); return; }
+    if (!USER_ACT) { var fa = focusHold(); if (fa) { holdRender(fa); fabRefresh(); return; } }
+    HOLD_PEND = false;
     var st = readState(), id = identity(st);
     PANEL.classList.toggle('noid', !id); PANEL.classList.toggle('f-dir', id === '导演'); PANEL.classList.toggle('f-act', id === '男优');
     fabRefresh(st);
     if (!id) { PANEL.innerHTML = renderHead(st) + renderNoId(); return; }
-    var t = curTab(st), main = PANEL.querySelector('.pc-main'), scroll = main ? main.scrollTop : 0, sameTab = PANEL.getAttribute('data-tab') === t;
+    // 当前页签记在 data-cur 上，不能叫 data-tab：点击委托认 [data-tab]，面板自己带着它，点哪儿都会被当成「切页签」（0.1.4 修）
+    var t = curTab(st), main = PANEL.querySelector('.pc-main'), scroll = main ? main.scrollTop : 0, sameTab = PANEL.getAttribute('data-cur') === t;
     var dlg = PANEL.querySelector('.pc-dialog'), dScroll = dlg ? dlg.scrollTop : 0;
     var custom = PANEL.querySelector('#pc-custom'); if (custom && UI.modal && UI.modal.kind === 'custom') UI.modal.text = custom.value;
     var body = t === 'dd' ? '' : ({ cal: renderCal, casting: renderCasting, cast: renderCast, plan: renderPlan, take: renderTake, shoot: renderShoot, market: renderMarket, call: renderCall, offers: renderOffers, resume: renderResume, wallet: renderWallet }[t] || renderCal)(st);
     var neg = st.money < 0 && t !== 'dd' ? '<div class="card warn">' + (id === '导演' ? '戴晶：导演部超支了。再这么下去，下个月的预算我得砍。' : '存款是负的了：房租和体检都等着。') + '</div>' : '';
-    PANEL.setAttribute('data-tab', t);
+    PANEL.setAttribute('data-cur', t);
     var sh = curShoot(st), live = sh && t !== 'shoot' && t !== 'dd' ? '<div class="card warn row" style="justify-content:space-between"><span>● 正在拍《' + esc(sh.title) + '》第 ' + (sh.cur + 1) + ' 场 · NG ' + sh.ng + (sh.paused ? ' · 🥬 停着' : '') + '</span><button class="btn sm" data-tab="shoot">去片场</button></div>' : '';
     var bar = st.scene && t !== 'dd' ? '<div class="card hl row" style="justify-content:space-between"><span class="sub">📝 正文待演：' + esc(st.scene.name || '') + (st.scene.got ? '（正文回过了，你下一条发出去就撤）' : '（下一条正文带着它写）') + '</span><button class="btn sm" data-act="scene-clear">撤掉</button></div>' : '';
     PANEL.innerHTML = renderHead(st) + renderNav(st) + '<main class="pc-main' + (t === 'dd' ? ' dd' : '') + '">' + (t === 'dd' ? '<div class="pc-ddhost"></div>' : live + bar + neg + body) + '</main>' + renderModal(st);
@@ -4982,6 +5021,13 @@ var PIANCHANG_ONLINE = (function () {
   function togglePanel() { if (PANEL.classList.contains('open')) closePanel(); else openPanel(); }
 
   // ── 点击 / 输入 ──
+  // 捕获阶段先记一笔「这是用户在操作」：盯盯自己的点击（在面板里头，先于下面的委托跑）引起的重画也算
+  ['click', 'change', 'input', 'keydown'].forEach(function (tn) { PANEL.addEventListener(tn, userAct, true); });
+  PANEL.addEventListener('focusin', focusIn, true);
+  function ptrDown() { PTR_DOWN = true; }
+  function ptrUp() { PTR_DOWN = false; }
+  PANEL.addEventListener('pointerdown', ptrDown, true);
+  try { DOC.addEventListener('pointerup', ptrUp, true); DOC.addEventListener('pointercancel', ptrUp, true); } catch (e) {}
   PANEL.addEventListener('change', function (e) {
     var t = e.target; if (!t || !t.getAttribute) return;
     if (t.hasAttribute('data-sh')) { UI.sh.sid = t.value; UI.sh.cast = {}; var st = readState(); if (st.dir.plan0 && st.dir.plan0.scriptId === t.value) UI.sh.cast = clone(st.dir.plan0.cast); render(); }
@@ -4997,7 +5043,7 @@ var PIANCHANG_ONLINE = (function () {
   });
   PANEL.addEventListener('click', function (e) {
     var t = e.target && e.target.closest ? e.target.closest('[data-act],[data-tab],[data-day]') : null;
-    if (!t) return;
+    if (!t || t === PANEL || !PANEL.contains(t)) return;   // 点空白处：什么都不做，不重画
     if (t.hasAttribute('data-tab')) { UI.tab = t.getAttribute('data-tab'); lsSet(TAB_KEY, UI.tab); render(); var m0 = PANEL.querySelector('.pc-main'); if (m0) m0.scrollTop = 0; return; }
     if (t.hasAttribute('data-day')) { UI.calSel = Number(t.getAttribute('data-day')) || null; render(); return; }
     var act = t.getAttribute('data-act'), id = t.getAttribute('data-id');
@@ -5537,6 +5583,7 @@ var PIANCHANG_ONLINE = (function () {
     try { uninjectPrompts([ID_IDENTITY, ID_OPENING, ID_RECENT, ID_SCENE, ID_SHOOT]); } catch (e) {}
     try { VIEW.removeEventListener('resize', onResize); } catch (e) {}
     try { DOC.removeEventListener('error', onPicError, true); } catch (e) {}
+    try { DOC.removeEventListener('pointerup', ptrUp, true); DOC.removeEventListener('pointercancel', ptrUp, true); } catch (e) {}
     try { if (BAR_RO) BAR_RO.disconnect(); } catch (e) {} BAR_RO = null;
     [BOARD_ID, STYLE_ID, FAB_ID, PANEL_ID, PSTYLE_ID].forEach(function (id) { var el = DOC.getElementById(id); if (el) el.remove(); });
     if (VIEW[INSTANCE_KEY] === cleanup) VIEW[INSTANCE_KEY] = null;
