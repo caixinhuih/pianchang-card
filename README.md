@@ -6,6 +6,7 @@ SillyTavern 角色卡。你到东京一家走下坡的老片商报到，挑一�
 - `card-offline.png` / `card-offline.json`：离线版，脚本全部内嵌，不联网，也不会更新。
 - `dist/pianchang.js`：片场脚本的完整代码。在线版按提交号从这里取，玩家能审到实际运行的代码。
 - `changelog.md`：版本记录。
+- [二创接口.md](二创接口.md)：想给片场做美化、插件或二创的看这里（只读接口 `PianchangOS`、data-* 钩子、渲染事件）。
 
 需要酒馆助手（JS-Slash-Runner），导入时允许角色脚本。
 
