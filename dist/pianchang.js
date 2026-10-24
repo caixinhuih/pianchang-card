@@ -919,6 +919,8 @@ var PIANCHANG_CORE = (function () {
     var out = [];
     splitTop(s).forEach(function (seg) {
       var m = seg.trim().match(/^(她|他|配)(?:[·・.](\S{1,6}?))?\s*[＝=]\s*([^（(]+)\s*(?:[（(](.*)[）)])?\s*$/);
+      // 手写剧本常见的写法「他·陆巡（35岁，男优位·主）」「他：陆巡」：没有＝，点或冒号后面直接是名字（v0.1.14，凌老师实测两男一女只认出一个她）
+      if (!m) { var m2 = seg.trim().match(/^(她|他|配)\s*[·・.:：]\s*([^（(＝=]+?)\s*(?:[（(](.*)[）)])?\s*$/); if (m2) m = [m2[0], m2[1], out.some(function (r) { return r.call === m2[1]; }) ? m2[2].trim() : '', m2[2], m2[3]]; }
       if (!m) return;
       var desc = (m[4] || '').trim();
       out.push({ side: m[1], call: m[2] || m[1], full: m[3].trim(), desc: desc, seat: /男优位\s*[·・]?\s*二/.test(desc) ? '二' : (m[1] === '他' ? (/男优位\s*[·・]?\s*主/.test(desc) ? '主' : '') : '') });
