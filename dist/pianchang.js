@@ -6632,6 +6632,78 @@ var PIANCHANG_ONLINE = (function () {
     })();
     return WB.busy;
   }
+  // 世界书存盘了（更新角色卡会把整本换成卡里自带的：三条【User】全是开着的）→ 等它存完再按身份摆一遍。
+  // 自己摆完存盘也会再来一次，那时三条已经对了，不再写
+  var WB_T = null;
+  function onWbUpdated(name) {
+    var book = ''; try { var nm = getCharWorldbookNames('current'); book = nm && nm.primary; } catch (e) {}
+    if (!book || (name && name !== book)) return;
+    if (WB_T) clearTimeout(WB_T);
+    WB_T = setTimeout(function () { WB_T = null; syncUserWb(); }, 500);
+  }
+
+  // ═════════════ 头像找回（v0.1.18）═════════════
+  // 0.1.17 及以前的整卡更新器拉的是 card.json：JSON 里没有图，酒馆导完就把默认头像（/img/ai4.png）的图原样包进卡里。
+  // 认法：这张卡的头像和 /img/ai4.png 尺寸一样、像素一样 = 被换成了默认图。玩家自己换过的头像不一样，不打扰。
+  // 找回：弹一条，点了按卡上的版本号拉同一版的 card.png 再导一次（聊天记录不动；世界书换回卡里自带的，和刚更新完一样，上面那段会把【User】摆好）
+  var AV = { checked: '', busy: false };
+  var AV_REPO = 'https://testingcf.jsdelivr.net/gh/fannnnnnn5822/pianchang-card@v';
+  // 酒馆导 JSON 时用 Jimp 把 ai4.png 重新编码过（字节不一样，像素一样，尺寸不变）：解码出来缩到 32×48 比像素
+  async function avPixels(buf) {
+    var bmp = await createImageBitmap(new Blob([buf], { type: 'image/png' }));
+    var cv = DOC.createElement('canvas'); cv.width = 32; cv.height = 48;
+    var g = cv.getContext('2d'); g.drawImage(bmp, 0, 0, 32, 48);
+    var out = { w: bmp.width, h: bmp.height, d: g.getImageData(0, 0, 32, 48).data };
+    try { bmp.close(); } catch (e) {}
+    return out;
+  }
+  function avSame(a, b) {
+    if (!a || !b || a.w !== b.w || a.h !== b.h) return false;
+    var sum = 0; for (var i = 0; i < a.d.length; i++) sum += Math.abs(a.d[i] - b.d[i]);
+    return sum / a.d.length < 3;
+  }
+  function avChar() {
+    try {
+      var X = typeof SillyTavern !== 'undefined' ? SillyTavern : null, ch = X && X.characters && X.characters[X.characterId];
+      if (!ch || !ch.avatar || !ch.data) return null;
+      var scs = (((ch.data.extensions || {}).tavern_helper || {}).scripts) || [];
+      if (!scs.some(function (x) { return x && x.name === '自动更新角色卡'; })) return null;   // 只管在线版（离线版不走更新器，也不该拉在线版的卡）
+      var me = scs.some(function (x) { return x && /PIANCHANG_CORE|pianchang_script_ref/.test(String(x.content || '')); });
+      if (!me) return null;
+      return { name: ch.name, avatar: ch.avatar, ver: String(ch.data.character_version || '').trim() };
+    } catch (e) { return null; }
+  }
+  async function checkAvatar() {
+    var c = avChar(); if (!c || !/^\d+\.\d+\.\d+$/.test(c.ver) || AV.checked === c.avatar) return;
+    AV.checked = c.avatar;
+    try {
+      var base = VIEW.location && VIEW.location.origin ? VIEW.location.origin : '';
+      var mine = await (await fetch(base + '/characters/' + encodeURIComponent(c.avatar), { cache: 'no-cache' })).arrayBuffer();
+      var def = await (await fetch(base + '/img/ai4.png', { cache: 'force-cache' })).arrayBuffer();
+      if (!avSame(await avPixels(mine), await avPixels(def))) return;
+    } catch (e) { return; }
+    try {
+      if (typeof toastr === 'undefined') return;
+      toastr.warning('上次「更新角色卡」把这张卡的头像弄丢了（换成了酒馆的默认图）。点这条找回：按 ' + c.ver + ' 版的带图卡再导一次，聊天记录不动。', '声色片场 · 头像', {
+        timeOut: 0, extendedTimeOut: 0, closeButton: true, tapToDismiss: true,
+        onclick: function () { fixAvatar(c); },
+      });
+    } catch (e) {}
+  }
+  async function fixAvatar(c) {
+    if (AV.busy) return; AV.busy = true;
+    try {
+      if (typeof importRawCharacter !== 'function') { toast('warning', '酒馆助手版本太旧，没有导入角色卡的接口：去发布页下载 card.png 手动导一次'); return; }
+      var r = await fetch(AV_REPO + c.ver + '/card.png', { cache: 'no-cache' });
+      if (!r.ok) throw new Error('下载带图的卡失败（HTTP ' + r.status + '）');
+      var blob = await r.blob();
+      var ok = await importRawCharacter(c.name, blob);
+      if (ok && ok.ok === false) throw new Error('酒馆没收下（HTTP ' + ok.status + '）');
+      toast('success', '头像找回来了。没看到的话刷新一下页面');
+    } catch (e) { toast('error', '头像没找回来：' + errMsg(e) + '。可以去发布页下载 card.png 手动导一次'); }
+    finally { AV.busy = false; }
+  }
+
   // 开场提示：只管下一次生成（once）。should_scan 开着，让提示里点到名字的人（尹椿、江蜜等）的世界书条目跟着亮
   var OPENING = { live: false };
   function injectOpening(k) {
@@ -10164,6 +10236,7 @@ var PIANCHANG_ONLINE = (function () {
     on(T.MESSAGE_RECEIVED, onMainReceived);
     on(T.MESSAGE_SENT, onUserSent);
     on(T.GENERATION_AFTER_COMMANDS, onBeforeGen);
+    on(T.WORLDINFO_UPDATED, onWbUpdated);
     on(T.GENERATION_ENDED, openingSpent);
     on(T.GENERATION_STOPPED, openingSpent);
     try { if (typeof iframe_events !== 'undefined') on(iframe_events.GENERATION_ENDED, openingSpent); } catch (e) {}
@@ -10210,10 +10283,11 @@ var PIANCHANG_ONLINE = (function () {
   watchBar();
   ddBadge();
   setTimeout(hintOldChat, 800);
+  setTimeout(checkAvatar, 2500);   // 头像被更新器换成默认图了没（v0.1.18）
 
   // 测试 / 调试钩子（无副作用）
   try {
-    window.__pianchang = { version: VERSION, state: readState, identity: identity, lastId: lastId, refresh: refresh, apply: apply, reset: onReset, depts: DEPTS, opening: OPENING, ui: UI, bui: BUI,
+    window.__pianchang = { checkAvatar: checkAvatar, fixAvatar: fixAvatar, avChar: avChar, version: VERSION, state: readState, identity: identity, lastId: lastId, refresh: refresh, apply: apply, reset: onReset, depts: DEPTS, opening: OPENING, ui: UI, bui: BUI,
       open: openPanel, close: closePanel, render: render, panel: PANEL, fab: FAB, core: C, save: save, cur: function () { return CUR; }, gen: GEN, endDays: endDays, nextMark: nextMark,
       startShootDir: startShootDir, startShootAct: startShootAct, shootNext: shootNext, shootCut: shootCut, shootWrap: shootWrap, doFinish: doFinish, writeScript: writeScript, dd: DD, online: ON, recentLine: recentLine, eventAct: eventAct,
       spotCheck: spotCheck, publishFilm: publishFilm, reEdit: reEdit, postScript: postScript, syncUserWb: syncUserWb, wb: WB, USER_WB: USER_WB,
