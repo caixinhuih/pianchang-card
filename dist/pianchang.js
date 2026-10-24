@@ -1410,11 +1410,15 @@ var PIANCHANG_CORE = (function () {
   // ═════════════ 男优：收尾骰 / 状态 / 药 ═════════════
   function finishChance(a, costarRepeat) {
     var films = (a.films || []).length;
-    var p = 0.3 + (Number(a.stamina) || 0) / 200 + Math.min(films, 20) * 0.012 + (costarRepeat ? 0.06 : 0) - (Number(a.pillDebt) || 0) * 0.0;
-    return clamp(p, 0.15, 0.95);
+    // v0.1.11：满状态 95%、一半 75%、见底 55%（原来满状态才 80%，一条没收住就往下掉，第一场拍完基本见底）
+    var p = 0.55 + (Number(a.stamina) || 0) / 250 + Math.min(films, 20) * 0.01 + (costarRepeat ? 0.05 : 0);
+    return clamp(p, 0.3, 0.95);
   }
   function rollFinish(a, costarRepeat) { var p = finishChance(a, costarRepeat); return { ok: rndFloat() < p, p: p }; }
-  function bedCost() { return 22 + randInt(14); }
+  // 收住了扣得多，没收住扣一半
+  function bedCost(failed) { return failed ? 8 + randInt(6) : 16 + randInt(10); }
+  // 回状态：每场收尾前能歇一次口气；喊了大头菜停下来、问清楚接着拍也算歇了一次；换场的空当补一点
+  var REST = { breath: 20, pause: 15, between: 8 };
   function pillGain(dose) { return Math.max(8, 45 - 9 * (Number(dose) || 0)); }
   function pillRisk(dose) { return dose >= 4 ? Math.min(0.6, 0.15 * (dose - 3)) : 0; }
   function gigPay(fame, tier, studioMul) { return Math.round((E.gigBase || 1500) * (1 + (Number(fame) || 0) / 50) * ((E.tierFeeMul || {})[tier] || 1) * (studioMul || 1) / 100) * 100; }
@@ -1511,7 +1515,7 @@ var PIANCHANG_CORE = (function () {
     PORTRAIT_N: PORTRAIT_N, PORTRAIT_BASE: PORTRAIT_BASE, portraitOk: portraitOk, portraitUrl: portraitUrl, pickPortrait: pickPortrait, fillPortraits: fillPortraits,
     drawCand: drawCand, drawCands: drawCands, drawTraits: drawTraits, drawSpice: drawSpice, spicePool: spicePool, drawLook: drawLook, portraitFit: portraitFit, pickPortraitFor: pickPortraitFor, reqOfText: reqOfText, archOf: archOf, NC_LAYERS: NC_LAYERS, NC_KEYS: NC_KEYS, NC_LABEL: NC_LABEL, ncLines: ncLines, candLines: candLines, npcFaces: npcFaces, drawXP: drawXP, drawNG: drawNG, filmFee: filmFee, buildCandPrompt: buildCandPrompt, CAND_RETRY: CAND_RETRY, parseCands: parseCands, parseCandOne: parseCandOne, personLines: personLines,
     buildTakePrompt: buildTakePrompt, parseTake: parseTake,
-    finishChance: finishChance, rollFinish: rollFinish, bedCost: bedCost, pillGain: pillGain, pillRisk: pillRisk, gigPay: gigPay,
+    finishChance: finishChance, rollFinish: rollFinish, bedCost: bedCost, REST: REST, pillGain: pillGain, pillRisk: pillRisk, gigPay: gigPay,
     filmScore: filmScore, monthCopies: monthCopies, marketBoard: marketBoard, actorBoard: actorBoard,
   };
 })();
@@ -7710,8 +7714,15 @@ var PIANCHANG_ONLINE = (function () {
   async function shootPause(on) {
     var st = readState(), fk = faceKey(st);
     if (on && st[fk].shoot && !st[fk].shoot.paused) hurtEvent(st, st[fk].shoot);
-    await save(function (s) { if (s[fk].shoot) s[fk].shoot.paused = !!on; });
+    var gave = false;
+    await save(function (s) {
+      var x = s[fk].shoot; if (!x) return;
+      // 停下来问清楚、接着拍：这一场歇过一次（每场一次）
+      if (!on && x.paused && x.pauseRest !== x.cur && (fk === 'act' || selfIn(x))) { x.pauseRest = x.cur; var who = fk === 'act' ? s.act : s.dir; who.stamina = Math.min(100, (Number(who.stamina) || 0) + C.REST.pause); gave = true; }
+      x.paused = !!on;
+    });
     applyShoot(); render();
+    if (gave) toast('info', '停了一会儿，缓过来一点：状态 +' + C.REST.pause);
   }
   function lastAiText() {
     try {
@@ -7741,7 +7752,7 @@ var PIANCHANG_ONLINE = (function () {
       var x = s2[fk].shoot; if (!x) return;
       x.done.push(C.doneLine(s)); x.hook = s.f['钩'] && s.f['钩'] !== '完' ? s.f['钩'] : ''; x.status = status; x.cur++; x.note = ''; x.paused = false;
       if (m) x.mishap[nx.n] = m;
-      if (fk === 'act' && s.bed) s2.act.stamina = Math.max(0, (Number(s2.act.stamina) || 0) - 0);   // 状态在收尾骰那一步扣
+      if (fk === 'act' || selfIn(x)) { var who = fk === 'act' ? s2.act : s2.dir; who.stamina = Math.min(100, (Number(who.stamina) || 0) + C.REST.between); }   // 换场的空当补一点；收尾那一步才扣
     });
     UI.sh.busy = false; applyShoot(); render();
     toast('info', '第 ' + (sh.cur + 2) + ' 场：' + nx.name + ((m || preset) ? '。片场意外：' + (m || preset) : '') + '。去正文接着演');
@@ -7751,6 +7762,12 @@ var PIANCHANG_ONLINE = (function () {
   async function doFinish(how) {
     var st = readState(), fk = faceKey(st), sh = st[fk].shoot; if (!sh || (fk === 'dir' && !selfIn(sh))) return;
     var sc = parsed(scriptRec(st, sh.scriptId)), s = sc.scenes[sh.cur], A = st.act;
+    if (how === 'rest') {
+      if ((sh.rested || {})[s.n]) return;
+      await save(function (s2) { var x = s2[fk].shoot; if (!x) return; x.rested = x.rested || {}; x.rested[s.n] = 1; var who = fk === 'act' ? s2.act : s2.dir; who.stamina = Math.min(100, (Number(who.stamina) || 0) + C.REST.breath); });
+      UI.modal = { kind: 'finish', n: s.n, msg: '歇了口气，喝了点水。状态 +' + C.REST.breath + '。这一场只能歇这一次。' };
+      render(); return;
+    }
     if (fk === 'dir') return doFinishDir(how, st, sh, s);
     if (how === 'pill') {
       var inModal = !!(UI.modal && UI.modal.kind === 'finish');
@@ -7770,7 +7787,7 @@ var PIANCHANG_ONLINE = (function () {
     }
     if (how === 'roll') {
       var repeat = A.films.some(function (f) { return f.costar === sh.cast[Object.keys(sh.cast)[0]]; });
-      var r = C.rollFinish(A, repeat), cost = C.bedCost();
+      var r = C.rollFinish(A, repeat), cost = C.bedCost(!r.ok);
       await save(function (s2) {
         var x = s2.act.shoot; s2.act.stamina = Math.max(0, (s2.act.stamina || 0) - cost);
         if (r.ok) x.finishes[s.n] = 'ok'; else { x.ng++; x.ngLog.push(x.cur); }
@@ -7788,7 +7805,7 @@ var PIANCHANG_ONLINE = (function () {
   function dirBody(st) { return { stamina: Number(st.dir.stamina) || 0, films: new Array(Math.min(20, Number(st.dir.povN) || 0)) }; }
   async function doFinishDir(how, st, sh, s) {
     if (how === 'roll') {
-      var r = C.rollFinish(dirBody(st), false), cost = C.bedCost();
+      var r = C.rollFinish(dirBody(st), false), cost = C.bedCost(!r.ok);
       await save(function (s2) { var x = s2.dir.shoot; if (!x) return; x.finishes = x.finishes || {}; s2.dir.stamina = Math.max(0, (Number(s2.dir.stamina) || 0) - cost); if (r.ok) x.finishes[s.n] = 'ok'; else { x.ng++; x.ngLog.push(x.cur); } });
       UI.modal = { kind: 'finish', n: s.n, res: r.ok ? 'ok' : 'fail', p: r.p, cost: cost };
       render(); return;
@@ -9043,7 +9060,7 @@ var PIANCHANG_ONLINE = (function () {
       if (m.res === 'ok') body += '<div class="big ok">收住了</div><div class="sub">一条过。状态 -' + m.cost + '。</div><div class="act"><button class="btn" data-act="modal-x">先关上</button><button class="btn pri" data-act="fin-go">接着拍 →</button></div>';
       else {
         if (m.res === 'fail') body += '<div class="big bad">没收住</div><div class="sub">全组在等。NG 记一次，状态 -' + m.cost + '。再来一条，还是用特写和剪辑糊弄过去（' + (isDir ? '片子评分扣一点' : '这场片酬打七折') + '）？</div>';
-        body += '<div class="act"><button class="btn" data-act="modal-x">先关上</button>' + (isDir ? '' : '<button class="btn" data-act="fin-pill">💊 吃药（' + esc(money(E.pill)) + '）</button>') + (m.res === 'fail' ? '<button class="btn" data-act="fin-fake">特写糊弄</button>' : '') + '<button class="btn pri" data-act="fin-roll">' + (m.res === 'fail' ? '再来一条' : '收尾') + '</button></div>';
+        body += '<div class="act"><button class="btn" data-act="modal-x">先关上</button>' + (sh9 && !(sh9.rested || {})[m.n] && (A.stamina | 0) < 100 ? '<button class="btn" data-act="fin-rest">歇口气（+' + C.REST.breath + '）</button>' : '') + (isDir ? '' : '<button class="btn" data-act="fin-pill">💊 吃药（' + esc(money(E.pill)) + '）</button>') + (m.res === 'fail' ? '<button class="btn" data-act="fin-fake">特写糊弄</button>' : '') + '<button class="btn pri" data-act="fin-roll">' + (m.res === 'fail' ? '再来一条' : '收尾') + '</button></div>';
       }
     }
     else if (m.kind === 'wrap') body = '<div class="eb">WRAP</div><h2 class="h">🎬 杀青？</h2><div class="sub">最后一场演完了就杀青。' + (dirLike(identity(st)) ? '片子进剪辑室，剪好就能在「市场」上架。' : '片酬进在途，' + E.payDelay + ' 天后到账。') + '</div><div class="act"><button class="btn" data-act="modal-x">再拍一会儿</button><button class="btn pri" data-act="wrap-ok">杀青</button></div>';
@@ -9373,6 +9390,7 @@ var PIANCHANG_ONLINE = (function () {
       case 'wrap-ok': shootWrap(false); break;
       case 'fin-roll': doFinish('roll'); break;
       case 'fin-pill': doFinish('pill'); break;
+      case 'fin-rest': doFinish('rest'); break;
       case 'fin-fake': doFinish('fake'); break;
       case 'fin-go': doFinish('go'); break;
       // 市场
