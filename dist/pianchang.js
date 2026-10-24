@@ -6663,7 +6663,9 @@ var PIANCHANG_ONLINE = (function () {
   }
 
   // 【片场近况】每轮挂，深度 1，system；玩家看不见。剧情时间照纸醉金迷的 [TIME]：脚本读完就从楼层里擦掉
-  var TIME_ASK = '这条回复写完，最后单独一行写剧情时间 [TIME:HH:MM|M/D]：这条回复结尾那一刻的时间，日期从上面那天往后接；故事过了夜，就写第二天的日期。';
+  function timeAsk(st) {
+    return '这条回复写完，最后单独一行写剧情时间 [TIME:HH:MM|M/D]：这条回复结尾那一刻的时间。片场日历上今天是第 ' + st.day + ' 天 = ' + C.mdShort(st.day) + '，现在是 ' + C.mdShort(st.day) + ' ' + st.clock + '；日期从这天往后接，同一天里的事都写 ' + C.mdShort(st.day) + '，故事过了夜才写第二天的日期。';
+  }
   var NEWS_GOT = {}, NEWS_GONE = {};
   function recentLine(st, news) {
     st = st || readState();
@@ -6718,7 +6720,7 @@ var PIANCHANG_ONLINE = (function () {
     try { uninjectPrompts([ID_RECENT]); } catch (e) {}
     if (!identity(st)) return;
     var news = (st.news || []).filter(function (e) { return e && !NEWS_GONE[e.id]; });
-    try { injectPrompts([{ id: ID_RECENT, position: 'in_chat', depth: 1, role: 'system', content: recentLine(st, news) + '\n' + TIME_ASK, should_scan: false }]); } catch (e) {}
+    try { injectPrompts([{ id: ID_RECENT, position: 'in_chat', depth: 1, role: 'system', content: recentLine(st, news) + '\n' + timeAsk(st), should_scan: false }]); } catch (e) {}
   }
   function newsReceived() {
     var st = readState(); if (!st.news.length) return;
@@ -9886,8 +9888,9 @@ var PIANCHANG_ONLINE = (function () {
   }
 
   // ═════════════════════════ 正文 ↔ 脚本 ═════════════════════════
-  // [TIME:HH:MM|M/D]：读完从楼层里擦掉；日期往后跳了就过日子（最多一次跳 7 天，防模型写错年份）
-  var TIME_RE = /\n?\s*\[TIME\s*[:：]\s*(\d{1,2})\s*[:：]\s*(\d{2})\s*(?:[|｜]\s*(\d{1,2})\s*[\/月]\s*(\d{1,2})\s*日?)?\s*\]\s*/i;
+  // [TIME:HH:MM|M/D]：读完从楼层里擦掉；日期往后跳了就过日子。一次跳超过 7 天当模型写错了（现实日期、编的日期），整条不认
+  //   （v0.1.17 照纸醉金迷：原来是「最多按 7 天算」，模型写一个现实日期 10/24，片场就白过一周）
+  var TIME_RE = /\n?\s*\[TIME\s*[:：]\s*(\d{1,2})\s*[:：]\s*(\d{2})\s*(?:[|｜]\s*(?:(\d{4})\s*[-\/年.]\s*)?(\d{1,2})\s*[-\/月.]\s*(\d{1,2})\s*日?)?\s*\]\s*/i;
   // 重抽 / 重新生成 / 续写：上一版回复已经推过日子了，这次只对时钟，不再往后推（不然一次重抽多过一天）
   var TIME_NO_ADV = { swipe: 1, regenerate: 1, 'continue': 1 };
   var TIME_RE_ALL = new RegExp(TIME_RE.source, 'gi');
@@ -9900,10 +9903,17 @@ var PIANCHANG_ONLINE = (function () {
       var ms = getChatMessages(mesId); var m = ms && ms[0]; if (!m || m.role !== 'assistant') return;
       var txt = String(m.message || ''), all = txt.match(TIME_RE_ALL); if (!all) return;
       var mm = all[all.length - 1].match(TIME_RE);   // 有好几个就认最后一个
-      var hh = Math.min(23, Number(mm[1])), mi = mm[2], st = readState(), adv = 0;
-      if (mm[3] && !TIME_NO_ADV[type]) { var d = C.dayFromMD(Number(mm[3]), Number(mm[4]), st.day); adv = Math.max(0, Math.min(7, d - st.day)); }
+      var hh = Math.min(23, Number(mm[1])), mi = mm[2], st = readState(), adv = 0, wild = 0;
+      if (mm[4] && !TIME_NO_ADV[type]) {
+        var d = mm[3] ? C.dayOfDate(new Date(Number(mm[3]), Number(mm[4]) - 1, Number(mm[5]))) : C.dayFromMD(Number(mm[4]), Number(mm[5]), st.day);
+        if (d - st.day > 7) wild = d - st.day; else adv = Math.max(0, d - st.day);
+      } else if (!mm[4] && !TIME_NO_ADV[type]) {
+        var c0 = String(st.clock || '').split(':'), t0 = Number(c0[0]) * 60 + Number(c0[1]);
+        if (t0 >= 0 && hh * 60 + Number(mi) < t0 - 240) adv = 1;
+      }
       var clean = txt.replace(TIME_RE_ALL, '\n').replace(/\n{3,}$/, '\n').trimEnd();
       try { await setChatMessages([{ message_id: m.message_id, message: clean }], { refresh: 'affected' }); } catch (e) {}
+      if (wild) { toast('warning', '正文写的日期 ' + (mm[3] ? mm[3] + '/' : '') + mm[4] + '/' + mm[5] + ' 离片场的今天（' + C.mdShort(st.day) + '）差了 ' + wild + ' 天，当写错了，没跟着跳；真要过日子，去「日历」点'); return; }
       var out = [];
       await save(function (s) { for (var i = 0; i < adv; i++) rollDay(s, out, i < adv - 1); s.clock = pad2(hh) + ':' + mi; });
       if (adv) { out.unshift('正文过了 ' + adv + ' 天，现在是 ' + C.mdText(st.day + adv)); rollToasts(out); }
