@@ -6509,7 +6509,9 @@ var PIANCHANG_ONLINE = (function () {
   //   · 坑二（好大鱼那边是滑开场白切阶段）：这张卡的身份不跟开场白走，只有上面四个入口改它，记录和开关一起改。
   // 10-24 加了【User】社长（社长线）
   var USER_WB = { '社长': '【User】社长', '导演': '【User】导演', '男优': '【User】男优' };
-  var WB = { err: '', busy: null, again: false, ok: '' };
+  var WB = { err: '', busy: null, again: false, ok: '', old: '' };   // old：绑的是 0.1.7 以前的旧世界书（有导演 / 男优，没有社长）时记书名
+  // 0.1.10（凌老师实测）：卡太旧、世界书是 0.1.7 以前的，脚本热更新成新的了，去找【User】社长找不到。这种情况说清楚是卡旧了、怎么换
+  function oldWbMsg(book) { return '你的卡还是旧版（世界书「' + book + '」里没有社长那一条）。点底下的「更新角色卡」，或者重新导入最新的卡；导入时问要不要导入世界书，选导入。如果没问，到角色卡的世界书按钮里点「导入嵌入的世界书」。'; }
   // 失败：有身份才吵（toast + 面板顶上的红条）；没身份时只是想把两条都关掉，失败了不打扰
   function wbFail(msg, loud) { WB.err = msg; WB.ok = ''; if (loud) toast('error', msg); try { render(); } catch (e) {} return false; }
   async function wbOnce(opt) {
@@ -6523,6 +6525,9 @@ var PIANCHANG_ONLINE = (function () {
     try { list = await getWorldbook(book); } catch (e) { return wbFail('打不开世界书「' + book + '」（' + errMsg(e) + '）。导入角色卡时要选「导入世界书」', loud); }
     var byName = {};
     (list || []).forEach(function (e) { if (e && e.name != null) byName[String(e.name).trim()] = e; });
+    var old = (byName[USER_WB['导演']] || byName[USER_WB['男优']]) && !byName[USER_WB['社长']] ? book : '';
+    if (old !== WB.old) { WB.old = old; try { ensureBoard(); } catch (e) {} }   // 公告栏「自己开公司」那张跟着挂提醒
+    if (want === USER_WB['社长'] && old) return wbFail(oldWbMsg(old), loud);
     if (want && !byName[want]) return wbFail('没找到' + want + '这一条世界书，导入角色卡时要选「导入世界书」（或者世界书里这一条被改了名）', loud);
     var change = {};
     Object.keys(USER_WB).forEach(function (k) { var e = byName[USER_WB[k]]; if (e && !!e.enabled !== (k === id)) change[USER_WB[k]] = (k === id); });
@@ -9458,6 +9463,7 @@ var PIANCHANG_ONLINE = (function () {
     '#' + BOARD_ID + ' .pc-coform{display:flex;flex-direction:column;gap:6px;}',
     '#' + BOARD_ID + ' .pc-colbl{font-size:12.5px;font-weight:700;color:var(--pc-red);}',
     '#' + BOARD_ID + ' .pc-coin{-webkit-user-select:text;user-select:text;box-sizing:border-box;width:100%;min-height:46px;margin:0;padding:6px 10px;border:1.5px solid rgba(42,33,25,.45);border-radius:4px;background:#fffdf5;color:#2a2119;font:600 18px/1.3 "Noto Serif SC","Source Han Serif SC","Songti SC",serif;}',
+    '#' + BOARD_ID + ' .pc-wbold{margin:6px 0 0;padding:6px 8px;border:1.5px dashed var(--pc-red);border-radius:4px;font-size:13px;line-height:1.5;color:var(--pc-red);background:rgba(255,255,255,.55);}',
     '#' + BOARD_ID + ' .pc-coerr{min-height:1.2em;font-size:12.5px;line-height:1.4;color:var(--pc-red);}',
     '#' + BOARD_ID + ' .pc-corow{display:flex;gap:8px;}',
     '#' + BOARD_ID + ' .pc-co-x,#' + BOARD_ID + ' .pc-co-ok{-webkit-appearance:none;appearance:none;min-height:48px;margin:0;border-radius:4px;cursor:pointer;touch-action:manipulation;font:700 18px/1.2 "Noto Serif SC","Source Han Serif SC","Songti SC",serif;}',
@@ -9555,12 +9561,13 @@ var PIANCHANG_ONLINE = (function () {
       '<p class="pc-faq"><span>问：' + esc(d.faq[0]) + '</span><span>答：' + esc(d.faq[1]) + '</span></p>' +
       '<div class="pc-sign">银星映像 社长 戴晶<span class="pc-seal"><span>戴</span><span>晶</span></span></div>' +
       '<span class="pc-contact">联系：' + esc(d.contact) + '</span>' +
+      (k === '社长' && WB.old && !other ? '<p class="pc-wbold" role="alert">' + esc(oldWbMsg(WB.old)) + '</p>' : '') +
       '<div class="pc-foot">' + foot + '</div>' +
       '<div class="pc-stamp"><b>' + esc(d.stamp || '已入职') + '</b><i> · </i><span>' + esc(k === '社长' ? (st.co || d.dept) : d.dept) + '</span></div>' +
       '</article>';
   }
   function boardState() { var s = readState(); var k = DEPTS[s['身份']] ? s['身份'] : ''; return { k: k, t: k ? String(s['入职时间'] || '') : '', co: k === '社长' ? coName(s) : '' }; }
-  function sigOf(st) { return st.k + '|' + st.t + '|' + st.co + '|' + BUI.busy + '|' + BUI.naming + '|' + BUI.coErr; }
+  function sigOf(st) { return st.k + '|' + st.t + '|' + st.co + '|' + BUI.busy + '|' + BUI.naming + '|' + BUI.coErr + '|' + WB.old; }
 
   function findMes0() { return DOC.querySelector('#chat .mes[mesid="0"]'); }
   function onBoardClick(e) {
