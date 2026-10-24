@@ -2813,7 +2813,7 @@ var PIANCHANG_COVER = (function () {
     else if (L === 'mark') body = '<span class="tp">' + G + '</span>' + T + A;
     else body = '<span class="up">' + A + '<b class="kw n' + Math.min(4, Array.from(kw).length) + '">' + esc(kw) + '</b></span>' + (pic ? '' : COVER_CLAP) + T;
     body = x.b + body + x.f + F + pic;
-    var size = opt.size === 'big' ? ' big' : opt.size === 'mini' ? ' mini' : ' strip';
+    var size = opt.size === 'big' ? ' big' : opt.size === 'mini' ? ' mini' : opt.size === 'tile' ? ' tile' : ' strip';
     return '<div class="mk-cover pc-cv' + size + ' ' + t + ' L-' + L + ' ' + z + (x.b || x.f || x.n ? ' r18' : '') + (pic ? ' hasp' : '') + (opt.gray ? ' gray' : '') + '" style="' + st + '">' + body + '</div>';
   }
   var CSS_RULES = [
@@ -2975,12 +2975,15 @@ var PIANCHANG_COVER = (function () {
     '%P% .mk-cover.strip.L-kw .xk1{top:1%;right:-5%;}',
     '%P% .mk-cover.strip.L-tate .xw2,%P% .mk-cover.strip.L-wave .xw5,%P% .mk-cover.strip.t4.L-mark .xw7{bottom:37%;}',
     '%P% .mk-cover.strip.L-quote .xk3{bottom:37%;}%P% .mk-cover.strip.t3.L-quote .q2{bottom:36%;}',
-    '%P% .mk-cover.mini{flex:none;width:58px;--u:1.6cqw;aspect-ratio:auto;min-height:78px;padding:54px 24px 34px;border-radius:4px;}',   // 同上，钉成手机上的像素值
+    // 10-24 Fan：「视频封面细细的好难看」——排行榜的小封面原来是 58px 宽的竖条、被行高拉长；改成 4:3 的小方图，和声优卡一样的脸
+    '%P% .mk-cover.mini{flex:none;width:92px;height:69px;--u:1.6cqw;aspect-ratio:4/3;min-height:0;padding:6px 7px;border-radius:4px;justify-content:center;}',
     '%P% .mk-cover.mini .ft,%P% .mk-cover.mini .tg,%P% .mk-cover.mini .ca,%P% .mk-cover.mini .tm,%P% .mk-cover.mini .rec,%P% .mk-cover.mini em.mo{display:none;}',
     '%P% .mk-cover.mini .ct{font-size:max(9px,calc(var(--u)*9))!important;-webkit-line-clamp:3;}',
     '%P% .mk-cover.mini .kw{display:none;}',
     '%P% .mk-cover.mini .cpic{width:34cqw;height:34cqw;}',
     '%P% .mk-cover.big{width:100%;border-radius:8px;margin:4px 0 12px;}',
+    '%P% .mk-cover.tile{width:100%;border-radius:0;}',   // 封面墙里的一张：和声优卡电脑上一样，整张 4:3 放在卡片顶上
+    '%P% .rk-row[data-act]{cursor:pointer;}%P% .rk-row[data-act]:hover{border-color:var(--pc-amber);}',
     '%P% .mk-cover{border-radius:4px;}',
     '%P% .mk-cover.gray{filter:grayscale(1) brightness(.7);}',
     // 「第一视角」：导演 / 社长自己上的第一视角片（10-23；10-24 主观改叫第一视角），封面底下和档位并排一个黑底白字的签
@@ -3021,7 +3024,7 @@ var PIANCHANG_COVER = (function () {
     opt = opt || {};
     if (!rows || !rows.length) return '';
     return '<div class="rk-list">' + rows.map(function (r) {
-      return '<div class="rk-row' + (r.me ? ' me' : '') + '"><span class="rk-n' + (r.rank <= 3 ? ' top' : '') + '">' + esc(r.rank) + '</span>' + html(r.cover || { id: r.title, title: r.title }, { size: 'mini' }) +
+      return '<div class="rk-row' + (r.me ? ' me' : '') + '"' + (r.act ? ' data-act="' + esc(r.act) + '" data-id="' + esc(r.id) + '" data-play="1"' : '') + '><span class="rk-n' + (r.rank <= 3 ? ' top' : '') + '">' + esc(r.rank) + '</span>' + html(r.cover || { id: r.title, title: r.title }, { size: 'mini' }) +
         '<div class="rk-i"><b>' + esc(r.title) + '</b>' + (r.sub ? '<span class="faint">' + r.sub + '</span>' : '') + '</div>' +
         '<div class="rk-v">' + (r.val != null ? '<b>' + esc(r.val) + '</b>' : '') + (r.val2 ? '<span class="faint">' + esc(r.val2) + '</span>' : '') + '</div></div>';
     }).join('') + '</div>';
@@ -5370,7 +5373,7 @@ var PIANCHANG_ONLINE = (function () {
     ctx: null, api: null, inited: false,
     status: 'idle',   // idle 还没问 / checking / ok / down 连不上 / nosetup 表还没建
     offlineUntil: 0, pinging: null, cfg: Object.assign({}, CFG0),
-    ui: { view: 'mine', q: '', tier: '', sort: 'new', page: 0, rank: 'films', dname: '', price: '', agree: false, stars: 0, cmt: '', rep: '', f: { tags: [], pov: '', len: '', open: false } },
+    ui: { autoplay: '', view: 'mine', q: '', tier: '', sort: 'new', page: 0, rank: 'films', dname: '', price: '', agree: false, stars: 0, cmt: '', rep: '', f: { tags: [], pov: '', len: '', open: false } },
     data: { shop: null, total: 0, lib: null, officials: null, ranks: {}, film: null, names: null },
     busy: {}, err: {}, note: {}, lastSync: 0, syncing: null, flushing: null, _gv: null,
   };
@@ -5643,6 +5646,109 @@ var PIANCHANG_ONLINE = (function () {
     for (var i = 0; i < pools.length; i++) { var f = pools[i].find(function (x) { return num(x.id) === id; }); if (f) return f; }
     return null;
   }
+  // ═════════════ 放映机（10-24 Fan：「像声优卡一样点进去看」「视频播放的效果就是播放他的剧本」）═════════════
+  // 剧本当片子放：片名卡 → 每场一张场号卡 → 台词一句一句出字幕，旁白、导演的话、字幕卡、喘各有各的样子。
+  // 没买的只放片头（预告），买过的、自己拍的从第一场放到完。走字只重画放映机那一块，不整页重画（评价框里打的字不丢）
+  var PL = { key: '', fr: [], i: -1, on: false, t: null, speed: 1, pv: false, end: null };
+  var PL_META = ['在场', '玩法', '姿势', '情', '新', '要', '之间', '镜', '钩', '变'];   // 分场表里写给剧组看的键，放映时不出字（在场、镜头放进场号卡）
+  function plLine(l) {
+    l = String(l || '').trim(); if (!l) return null;
+    var m = l.match(/^([^：:「」“”]{1,10})[：:]\s*([\s\S]*)$/);
+    if (!m) return { k: 'act', x: l };
+    var who = m[1].trim(), x = m[2].trim();
+    if (PL_META.indexOf(who) >= 0) return null;
+    if (who === '导') return { k: 'dir', x: x };
+    if (who === '字') return { k: 'cap', x: x };
+    if (who === '喘') return { k: 'moan', x: x };
+    if (/[「“"『]/.test(x)) return { k: 'say', w: who, x: x };
+    return { k: 'act', x: l };
+  }
+  function plFrames(sc) {
+    var hd = sc.head || {}, fr = [{ k: 'title', x: sc.title, s: [tierShort(sc.tier), sc.lineup, hd['卖点'] || ''].filter(Boolean).join(' · '), si: -1 }];
+    arr(sc.scenes).forEach(function (sn, i) {
+      fr.push({ k: 'scene', n: sn.n || i + 1, x: sn.name, s: sn.where, m: [sn.f && sn.f['在场'] ? '在场 ' + sn.f['在场'] : '', sn.f && sn.f['镜'] ? '镜头 ' + sn.f['镜'] : ''].filter(Boolean), si: i });
+      arr(sn.lines).slice(1).forEach(function (l) { var f = plLine(l); if (f) { f.si = i; fr.push(f); } });
+    });
+    fr.push({ k: 'end', si: arr(sc.scenes).length });
+    return fr;
+  }
+  // 预告：只有片头那几行（服务器切好的，谁都能看）
+  function plTrailer(title, head) {
+    var fr = [{ k: 'title', x: title, s: '预告', si: -1 }];
+    String(head || '').split('\n').forEach(function (l) {
+      l = l.trim(); var m = l.match(/^([^：:]{1,6})[：:]\s*(.+)$/); if (!m || /^企划/.test(m[1])) return;
+      fr.push({ k: 'pv', w: m[1].trim(), x: m[2].trim(), si: 0 });
+    });
+    fr.push({ k: 'end', pv: true, si: 1 });
+    return fr;
+  }
+  function plDur(f) {
+    if (!f) return 0;
+    if (f.k === 'title') return 2600; if (f.k === 'scene') return 2400; if (f.k === 'end') return 0;
+    return Math.max(1700, Math.min(6500, 900 + chars(f.x).length * 85 + (f.w ? 250 : 0)));
+  }
+  function plTotal() { return PL.fr.reduce(function (a, f) { return a + plDur(f); }, 0); }
+  function plUpTo(i) { var t = 0; for (var j = 0; j < i && j < PL.fr.length; j++) t += plDur(PL.fr[j]); return t; }
+  function mmss(ms) { var s = Math.round(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function plStop() { if (PL.t) { clearTimeout(PL.t); PL.t = null; } PL.on = false; }
+  // 换了一部片子 / 买下来以后从预告换成全片：重新装片
+  function plLoad(key, fr, pv, end) { if (PL.key === key) { PL.end = end; return; } plStop(); PL.key = key; PL.fr = fr; PL.i = -1; PL.pv = !!pv; PL.end = end; }
+  function plEl() { var c = ctx(), P = c.panel ? c.panel() : null; return P ? P.querySelector('#pc-pl') : null; }
+  function plPaint() {
+    var el = plEl(); if (!el || el.getAttribute('data-key') !== PL.key) { plStop(); return false; }
+    el.innerHTML = plInner(); return true;
+  }
+  function plTick() {
+    PL.t = null; if (!PL.on) return;
+    if (PL.i >= PL.fr.length - 1) { PL.on = false; plPaint(); return; }
+    PL.i++;
+    if (!plPaint()) return;
+    if (PL.fr[PL.i].k === 'end') { PL.on = false; plPaint(); return; }
+    PL.t = setTimeout(plTick, plDur(PL.fr[PL.i]) / PL.speed);
+  }
+  function plPlay() { if (!PL.fr.length) return; if (PL.i >= PL.fr.length - 1) PL.i = -1; PL.on = true; if (PL.t) clearTimeout(PL.t); plTick(); }
+  function plPause() { plStop(); plPaint(); }
+  function plJump(d) {   // 上一场 / 下一场：跳到那一场的场号卡
+    if (!PL.fr.length) return;
+    var cur = PL.i < 0 ? -1 : PL.fr[PL.i].si, want = cur + d, j = -1;
+    for (var k = 0; k < PL.fr.length; k++) { if (PL.fr[k].si === want && (PL.fr[k].k === 'scene' || PL.fr[k].k === 'end' || PL.fr[k].k === 'title' || PL.pv)) { j = k; break; } }
+    if (j < 0) j = d < 0 ? 0 : PL.fr.length - 1;
+    var was = PL.on; plStop(); PL.i = j - 1; if (was && PL.fr[j].k !== 'end') { PL.on = true; plTick(); } else { PL.i = j; plPaint(); }
+  }
+  function plFrameHtml(f) {
+    if (!f) return '';
+    if (f.k === 'title') return '<div class="pl-title"><b>《' + esc(f.x) + '》</b>' + (f.s ? '<span>' + esc(f.s) + '</span>' : '') + '</div>';
+    if (f.k === 'scene') return '<div class="pl-scene"><em>#' + esc(f.n) + '</em><b>' + esc(f.x) + '</b>' + (f.s ? '<span>' + esc(f.s) + '</span>' : '') + f.m.map(function (x) { return '<i>' + esc(clip(x, 40)) + '</i>'; }).join('') + '</div>';
+    if (f.k === 'say') return '<div class="pl-l say"><b>' + esc(f.w) + '</b>' + esc(f.x) + '</div>';
+    if (f.k === 'dir') return '<div class="pl-l dir">导演：' + esc(f.x) + '</div>';
+    if (f.k === 'cap') return '<div class="pl-l cap">' + esc(f.x) + '</div>';
+    if (f.k === 'moan') return '<div class="pl-l moan">' + esc(f.x) + '</div>';
+    if (f.k === 'pv') return '<div class="pl-l pv"><b>' + esc(f.w) + '</b>' + esc(f.x) + '</div>';
+    return '<div class="pl-l act">' + esc(f.x) + '</div>';
+  }
+  function plInner() {
+    var fr = PL.fr, i = PL.i, f = i >= 0 ? fr[i] : null, n = fr.filter(function (x) { return x.k === 'scene'; }).length, scr;
+    if (!f) scr = '<button class="pl-poster" data-act="ol-pl-play" aria-label="播放">' + (PL.end && PL.end.cover || '') + '<span class="pl-big">▶</span>' + (PL.pv ? '<span class="pl-pvtag">预告</span>' : '') + '</button>';
+    else if (f.k === 'end') scr = '<div class="pl-end"><b>' + (PL.pv ? '预告完' : '— 完 —') + '</b>' + (PL.end && PL.end.html || '') + '<button class="btn sm" data-act="ol-pl-play">↻ 从头再放</button></div>';
+    else if (f.k === 'title' || f.k === 'scene') scr = plFrameHtml(f);
+    else {   // 字幕：这一句亮着，前两句淡在上面（同一场里的）
+      var prev = [];
+      for (var j = i - 1; j >= 0 && prev.length < 2; j--) { var p = fr[j]; if (p.si !== f.si || p.k === 'scene' || p.k === 'title') break; prev.unshift(p); }
+      scr = '<div class="pl-subs">' + prev.map(function (p) { return '<div class="pl-old">' + plFrameHtml(p) + '</div>'; }).join('') + plFrameHtml(f) + '</div>';
+    }
+    var top = f && f.si >= 0 && f.k !== 'end' && n ? '<div class="pl-top"><span>#' + esc(f.k === 'scene' ? f.n : (fr.filter(function (x) { return x.k === 'scene' && x.si === f.si; })[0] || {}).n || '') + '</span><span class="pl-rec">' + (PL.on ? '● ' : '❚❚ ') + (f.si + 1) + '/' + n + '</span></div>' : '';
+    var tot = plTotal(), at = Math.min(tot, plUpTo(Math.max(0, i + 1))), pc = tot ? Math.round(at / tot * 1000) / 10 : 0;
+    var ticks = fr.map(function (x, k) { return x.k === 'scene' ? '<i style="left:' + (tot ? Math.round(plUpTo(k) / tot * 1000) / 10 : 0) + '%"></i>' : ''; }).join('');
+    return '<div class="pl-scr">' + top + scr + '</div>' +
+      '<div class="pl-bar"><b style="width:' + pc + '%"></b>' + ticks + '</div>' +
+      '<div class="pl-ctl"><button class="btn sm" data-act="ol-pl-prev" aria-label="上一场">⏮</button>' +
+      '<button class="btn sm pri" data-act="' + (PL.on ? 'ol-pl-pause' : 'ol-pl-play') + '">' + (PL.on ? '❚❚ 停' : f && f.k !== 'end' ? '▶ 接着放' : '▶ 放' + (PL.pv ? '预告' : '')) + '</button>' +
+      '<button class="btn sm" data-act="ol-pl-next" aria-label="下一场">⏭</button>' +
+      '<span class="pl-tc">' + mmss(at) + ' / ' + mmss(tot) + '</span>' +
+      '<button class="btn sm" data-act="ol-pl-speed">' + PL.speed + '×</button></div>';
+  }
+  function plHtml() { return '<div class="pl" id="pc-pl" data-key="' + esc(PL.key) + '">' + plInner() + '</div>'; }
+  function plAuto(id) { if (M.ui.autoplay !== '' && M.ui.autoplay === id) { M.ui.autoplay = ''; var key = PL.key; setTimeout(function () { if (PL.key === key && !PL.on) plPlay(); }, 30); } }
   function hasLocal(st, filmId) { var id = 'buy_' + num(filmId); return arr(st.dir && st.dir.scripts).some(function (x) { return x.id === id; }); }
   function isBought(filmId) { filmId = num(filmId); return arr(M.data.lib).some(function (x) { return num(x.film_id) === filmId; }); }
   function putScript(s, rec, face) {
@@ -5871,12 +5977,13 @@ var PIANCHANG_ONLINE = (function () {
     var btn = mine ? '<span class="tag">自己的</span>' : local ? '<span class="tag gr">已买 · 在企划</span>'
       : bought ? '<button class="btn sm" data-act="ol-regain" data-id="' + id + '"' + busy + '>买过了，再拿一次</button>'
       : '<button class="btn sm pri" data-act="ol-buy" data-id="' + id + '"' + busy + '>买 ' + esc(money(r.price)) + '</button>';
-    var cover = coverOf({ id: id, title: r.title, tier: r.tier, by: r.director ? '导演 ' + r.director : '', cast: arr(r.cast_names).join(' · '), tags: arr(r.tags).filter(function (x) { return !isPovTag(x); }).slice(0, 2), pov: arr(r.tags).some(isPovTag) });
-    return '<div class="card film">' + cover + '<div class="info"><div class="row"><b>《' + esc(r.title) + '》</b></div>' +
+    var cover = coverOf({ id: id, title: r.title, tier: r.tier, by: r.director ? '导演 ' + r.director : '', cast: arr(r.cast_names).join(' · '), tags: arr(r.tags).filter(function (x) { return !isPovTag(x); }).slice(0, 2), pov: arr(r.tags).some(isPovTag) }, { size: 'tile' });
+    var see = local ? '▶ 看全片' : '▶ 预告';
+    return '<div class="card film"><button class="cvbtn" data-act="ol-film" data-id="' + id + '" aria-label="点进去看">' + cover + '</button><div class="info"><div class="row"><button class="ttl" data-act="ol-film" data-id="' + id + '">《' + esc(r.title) + '》</button></div>' +
       '<div class="faint">导演 ' + esc(r.director || '') + ' · ' + esc(r.lineup || '') + ' · ' + num(r.scenes) + ' 场</div>' + metaHtml(shopMeta(r)) +
       (r.blurb ? '<div class="sub" style="margin:4px 0">' + esc(r.blurb) + '</div>' : '') +
       '<div class="faint">' + starsTxt(r.stars, r.stars_n) + ' · 卖出 ' + num(r.sales) + ' 份</div>' +
-      '<div class="row" style="margin-top:6px"><button class="btn sm" data-act="ol-film" data-id="' + id + '">看片头</button>' + btn + '</div></div></div>';
+      '<div class="row" style="margin-top:6px"><button class="btn sm" data-act="ol-film" data-id="' + id + '" data-play="1">' + see + '</button>' + btn + '</div></div></div>';
   }
   function shopHtml(st) {
     if (!online()) return needOnline();
@@ -5890,7 +5997,7 @@ var PIANCHANG_ONLINE = (function () {
     var rows = fOn ? all.filter(function (r) { return C().scFilterOk(shopMeta(r), u.f); }) : all;
     if (M.data.shop && !all.length) h += '<div class="empty">' + (u.q || u.tier || fOn ? '没搜到。换个词或者少选几样试试。' : '「玩家剧本」里还没有剧本。你在「我的片」挂一部，就是第一部。') + '</div>';
     else if (M.data.shop && !rows.length) h += '<div class="empty">这一页里没有对得上筛选的，翻下一页看看。</div>';
-    h += rows.map(function (r) { return shopCard(r, st); }).join('');
+    if (rows.length) h += '<div class="film-grid">' + rows.map(function (r) { return shopCard(r, st); }).join('') + '</div>';
     var pages = Math.max(1, Math.ceil(num(M.data.total) / MK.pageSize));
     if (pages > 1) h += '<div class="row" style="justify-content:center;margin-top:6px"><button class="btn sm" data-act="ol-page" data-d="-1"' + (u.page <= 0 ? ' disabled' : '') + '>上一页</button><span class="faint">第 ' + (u.page + 1) + ' / ' + pages + ' 页 · 共 ' + num(M.data.total) + ' 部</span><button class="btn sm" data-act="ol-page" data-d="1"' + (u.page + 1 >= pages ? ' disabled' : '') + '>下一页</button></div>';
     // 买过、这个聊天里没有的
@@ -5907,11 +6014,11 @@ var PIANCHANG_ONLINE = (function () {
     var h = '<div class="sub" style="margin-bottom:10px">市场运营部放出来的剧本，谁都能免费拿去拍。</div>' + busyErr('official');
     var rows = M.data.officials || [];
     if (M.data.officials && !rows.length) h += '<div class="empty">运营部还没放官方剧本。过几天再来看。</div>';
-    return h + rows.map(function (o) {
+    return h + '<div class="film-grid">' + rows.map(function (o) {
       var id = num(o.id), have = arr(st.dir && st.dir.scripts).some(function (x) { return x.id === 'off_' + id; });
       var btn = o.only_actor ? '<span class="tag ng">男优身份限定</span>' : have ? '<span class="tag gr">已在企划</span>' : '<button class="btn sm pri" data-act="ol-off-take" data-id="' + id + '"' + (M.busy['off' + id] ? ' disabled' : '') + '>免费拿</button>';
-      return '<div class="card film">' + coverOf({ id: 'off' + id, title: o.title, tier: o.tier, by: '官方剧本', cast: o.lineup || '', tags: arr(o.tags).map(povName).slice(0, 2) }) + '<div class="info"><div class="row">' + tierTag(o.tier) + '<b>《' + esc(o.title) + '》</b></div><div class="faint">' + esc(o.lineup || '') + ' · ' + num(o.scenes) + ' 场 · ' + num(o.takes) + ' 人拿去拍过</div>' + (o.blurb ? '<div class="sub" style="margin:4px 0">' + esc(o.blurb) + '</div>' : '') + '<div class="row" style="margin-top:6px">' + btn + '</div></div></div>';
-    }).join('');
+      return '<div class="card film">' + coverOf({ id: 'off' + id, title: o.title, tier: o.tier, by: '官方剧本', cast: o.lineup || '', tags: arr(o.tags).map(povName).slice(0, 2) }, { size: 'tile' }) + '<div class="info"><div class="row">' + tierTag(o.tier) + '<b>《' + esc(o.title) + '》</b></div><div class="faint">' + esc(o.lineup || '') + ' · ' + num(o.scenes) + ' 场 · ' + num(o.takes) + ' 人拿去拍过</div>' + (o.blurb ? '<div class="sub" style="margin:4px 0">' + esc(o.blurb) + '</div>' : '') + '<div class="row" style="margin-top:6px">' + btn + '</div></div></div>';
+    }).join('') + '</div>';
   }
   function rankHtml(st, seed, day) {
     var u = M.ui, on = of(st);
@@ -5929,7 +6036,7 @@ var PIANCHANG_ONLINE = (function () {
       h += '<div class="sub" style="margin-bottom:6px">近 30 天别的玩家买剧本带来的收入。片子少的时候拿别家片商的片补位，标着 NPC。</div>' +
         rankList(rows.map(function (r) {
           var x = r.npc ? null : full[r.id] || {};
-          return { rank: r.rank, me: r.me, title: '《' + r.title + '》', sub: esc(r.npc ? r.who : '导演 ' + r.who) + (r.npc ? ' <span class="tag ol-npc">NPC</span>' : ''),
+          return { rank: r.rank, me: r.me, act: r.npc ? '' : 'ol-film', id: r.id, title: '《' + r.title + '》', sub: esc(r.npc ? r.who : '导演 ' + r.who) + (r.npc ? ' <span class="tag ol-npc">NPC</span>' : ''),
             val: r.npc ? (r.copies ? r.copies + ' 份' : '—') : money(r.income), val2: r.npc ? '' : '玩家买了 ' + r.sales + ' 份',
             cover: r.npc ? { id: 'n:' + r.title, title: r.title, tier: npcTier(r.title), by: r.who } : { id: r.id, title: r.title, tier: x.tier, by: '导演 ' + r.who, cast: arr(x.cast_names).join(' · '), tags: arr(x.tags).map(povName).slice(0, 2) } };
         }));
@@ -6002,6 +6109,7 @@ var PIANCHANG_ONLINE = (function () {
 
   // 弹层（UI.modal.kind 以 ol- 开头的）
   function modalHtml(st, m) {
+    if (m.kind === 'ol-own') return ownModal(st, m);
     if (m.kind === 'ol-list') {
       var f = arr(st.dir.films).find(function (x) { return x.id === m.id; }), L0 = listing(st, f, H());
       if (L0.err) return '<div class="eb">ONLINE</div><h2 class="h">挂不了</h2><div class="err">' + esc(L0.err) + '</div><div class="act"><button class="btn" data-act="modal-x">关上</button></div>';
@@ -6027,9 +6135,15 @@ var PIANCHANG_ONLINE = (function () {
       if (!d || d.loading) return '<div class="eb">FILM</div><h2 class="h">片子</h2>' + busyErr('film') + '<div class="act"><button class="btn" data-act="modal-x">关上</button></div>';
       if (d.gone) return '<div class="eb">FILM</div><h2 class="h">这部没了</h2><div class="sub">下架了，或者被运营部撤了。</div><div class="act"><button class="btn" data-act="modal-x">关上</button></div>';
       var fl = d.film, id = num(fl.id), on = of(st), mine = !!on.dirId && fl.director_id === on.dirId, bought = isBought(id) || hasLocal(st, id), busy = M.busy['buy' + id] ? ' disabled' : '';
-      var h = '<div class="eb">FILM</div><h2 class="h">《' + esc(fl.title) + '》</h2>' + coverOf({ id: id, title: fl.title, tier: fl.tier, by: fl.director ? '导演 ' + fl.director : '', cast: arr(fl.cast_names).join(' · '), tags: arr(fl.tags).map(povName).slice(0, 2) }, { size: 'big' }) + '<div class="row">' + tierTag(fl.tier) + '<span class="faint">导演 ' + esc(fl.director || '') + ' · ' + esc(fl.lineup || '') + ' · ' + num(fl.scenes) + ' 场 · 剧本 ' + num(fl.script_len) + ' 字</span></div>' +
+      var cvr = coverOf({ id: id, title: fl.title, tier: fl.tier, by: fl.director ? '导演 ' + fl.director : '', cast: arr(fl.cast_names).join(' · '), tags: arr(fl.tags).map(povName).slice(0, 2) }, { size: 'tile' });
+      var lrec = arr(st.dir && st.dir.scripts).find(function (x) { return x.id === 'buy_' + id; }), lsc = lrec && C().parseScript ? C().parseScript(lrec.raw) : null;
+      var endH = mine ? '' : lsc && lsc.ok ? '<button class="btn sm pri" data-act="ol-pl-rate">看完了，打个分</button>' : isBought(id) ? '<button class="btn sm pri" data-act="ol-regain" data-id="' + id + '"' + busy + '>买过了，拿回剧本看全片</button>' : '<button class="btn sm pri" data-act="ol-buy" data-id="' + id + '"' + busy + '>买 ' + esc(money(fl.price)) + ' 看全片</button>';
+      if (lsc && lsc.ok) plLoad('f' + id + ':full', plFrames(lsc), false, { cover: cvr, html: endH });
+      else plLoad('f' + id + ':pv', plTrailer(fl.title, fl.head), true, { cover: cvr, html: endH });
+      plAuto(id);
+      var h = '<div class="eb">FILM</div><h2 class="h">《' + esc(fl.title) + '》</h2>' + plHtml() + '<div class="row">' + tierTag(fl.tier) + '<span class="faint">导演 ' + esc(fl.director || '') + ' · ' + esc(fl.lineup || '') + ' · ' + num(fl.scenes) + ' 场 · 剧本 ' + num(fl.script_len) + ' 字</span></div>' +
         '<div class="faint" style="margin:4px 0">' + starsTxt(fl.stars, fl.stars_n) + ' · 卖出 ' + num(fl.sales) + ' 份 · ' + esc(money(fl.price)) + ' 一份</div>' +
-        '<div class="lbl">片头（买之前能看的这些）</div><div class="script short">' + esc(fl.head || '') + '</div>';
+        (lsc && lsc.ok ? '' : '<div class="lbl">片头（买之前能看的这些）</div><div class="script short">' + esc(fl.head || '') + '</div>');
       h += '<div class="row" style="margin-top:10px">' + (mine ? '<span class="tag">自己的片子</span>' : hasLocal(st, id) ? '<span class="tag gr">已买 · 在企划</span>' : isBought(id) ? '<button class="btn sm" data-act="ol-regain" data-id="' + id + '"' + busy + '>买过了，再拿一次</button>' : '<button class="btn pri" data-act="ol-buy" data-id="' + id + '"' + busy + '>买 ' + esc(money(fl.price)) + '</button>') +
         (mine ? '' : '<button class="btn sm" data-act="ol-report-open" data-id="' + id + '">举报</button>') + '</div>';
       if (bought && !mine) {
@@ -6052,6 +6166,17 @@ var PIANCHANG_ONLINE = (function () {
   }
 
   // 点击 / 输入（pianchang.js 把 data-act 以 ol- 开头的转过来）
+  function ownModal(st, m) {
+    var f = arr(st.dir && st.dir.films).find(function (x) { return x.id === m.id; });
+    if (!f) return '<div class="eb">FILM</div><h2 class="h">这部没了</h2><div class="act"><button class="btn" data-act="modal-x">关上</button></div>';
+    var c = ctx(), rec = !f.legacy && f.scriptId && c.scriptRec ? c.scriptRec(st, f.scriptId) : null, sc = rec && c.parsed ? c.parsed(rec) : null;
+    var h = '<div class="eb">FILM</div><h2 class="h">《' + esc(f.title) + '》</h2>';
+    var cvr = c.filmCover ? c.filmCover(st, f, { size: 'tile' }) : '';
+    if (sc) { plLoad('o' + f.id, plFrames(sc), false, { cover: cvr, html: '' }); plAuto(f.id); h += plHtml(); }
+    else h += cvr + '<div class="faint" style="margin:6px 0">' + (f.legacy ? '上一任留下的片子，剧本不在手里，放不了。' : '拍这部用的剧本已经从企划里删掉了，放不了。') + '</div>';
+    h += '<div class="faint" style="margin-top:8px">' + esc(f.no || '') + ' · ' + esc(arr(f.cast).join('、')) + ' · NG ' + num(f.ng) + ' 次' + (f.status !== 'edit' ? ' · 评分 ' + num(f.score) : '') + (f.sales ? ' · 累计 ' + num(f.sales) + ' 份' : '') + '</div>';
+    return h + '<div class="act"><button class="btn" data-act="modal-x">关上</button></div>';
+  }
   function readInput(id) { var c = ctx(), P = c.panel ? c.panel() : null, el = P && P.querySelector('#' + id); return el ? el.value : null; }
   function setModal(m) { var c = ctx(); if (c.ui) c.ui.modal = m; }
   function click(act, el, st) {
@@ -6099,7 +6224,14 @@ var PIANCHANG_ONLINE = (function () {
       case 'ol-scf': if (C().scFilterClick) C().scFilterClick(M.ui.f, el.getAttribute('data-f'), el.getAttribute('data-v') || ''); if (el.getAttribute('data-f') !== 'open') { M.ui.page = 0; M.data.shop = null; loadShop(); } rerender(); return true;
       case 'ol-tag': M.ui.tag = M.ui.tag === el.getAttribute('data-t') ? '' : (el.getAttribute('data-t') || ''); M.ui.page = 0; M.data.shop = null; loadShop(); return true;
       case 'ol-page': M.ui.page = Math.max(0, M.ui.page + (Number(el.getAttribute('data-d')) || 0)); M.data.shop = null; loadShop(); return true;
-      case 'ol-film': M.ui.stars = 0; M.ui.cmt = ''; M.err.rate = ''; setModal({ kind: 'ol-film', id: id }); if (!M.data.film || M.data.film.id !== num(id)) loadFilm(id); if (!M.data.lib) loadLib(); rerender(); return true;
+      case 'ol-pl-play': plPlay(); return true;
+      case 'ol-pl-pause': plPause(); return true;
+      case 'ol-pl-prev': plJump(-1); return true;
+      case 'ol-pl-next': plJump(1); return true;
+      case 'ol-pl-speed': PL.speed = PL.speed === 1 ? 2 : PL.speed === 2 ? 4 : 1; if (PL.on) { if (PL.t) clearTimeout(PL.t); PL.t = setTimeout(plTick, plDur(PL.fr[PL.i]) / PL.speed); } plPaint(); return true;
+      case 'ol-pl-rate': { var cP = ctx(), PP = cP.panel ? cP.panel() : null, ci = PP && PP.querySelector('#pc-ol-cmt'); if (ci) { try { ci.scrollIntoView({ block: 'center' }); ci.focus(); } catch (e) {} } return true; }
+      case 'ol-own': M.ui.autoplay = el.getAttribute('data-play') ? id : ''; setModal({ kind: 'ol-own', id: id }); rerender(); return true;
+      case 'ol-film': M.ui.autoplay = el.getAttribute('data-play') ? num(id) : ''; M.ui.stars = 0; M.ui.cmt = ''; M.err.rate = ''; setModal({ kind: 'ol-film', id: id }); if (!M.data.film || M.data.film.id !== num(id)) loadFilm(id); if (!M.data.lib) loadLib(); rerender(); return true;
       case 'ol-buy': buy(id); return true;
       case 'ol-regain': regain(id); return true;
       case 'ol-star': M.ui.stars = Number(el.getAttribute('data-s')) || 0; var cm = readInput('pc-ol-cmt'); if (cm != null) M.ui.cmt = cm; rerender(); return true;
@@ -6153,7 +6285,7 @@ var PIANCHANG_ONLINE = (function () {
     takeOfficial: takeOfficial, loadShop: loadShop, loadOfficials: loadOfficials, loadRanks: loadRanks, flushPending: flushPending,
     // 画面
     view: view, statusHtml: statusHtml, navHtml: navHtml, viewHtml: viewHtml, dirNameCard: dirNameCard, filmExtra: filmExtra, footHtml: footHtml,
-    stageCard: stageCard, actorBoardHtml: actorBoardHtml, modalHtml: modalHtml, click: click, input: input, change: change, enter: enter,
+    stageCard: stageCard, actorBoardHtml: actorBoardHtml, modalHtml: modalHtml, plStop: plStop, PL: PL, plFrames: plFrames, plLine: plLine, click: click, input: input, change: change, enter: enter,
   };
 })();
 
@@ -6644,7 +6776,7 @@ var PIANCHANG_ONLINE = (function () {
 
   // ═════════════ 头像找回（v0.1.18）═════════════
   // 0.1.17 及以前的整卡更新器拉的是 card.json：JSON 里没有图，酒馆导完就把默认头像（/img/ai4.png）的图原样包进卡里。
-  // 认法：这张卡的头像和 /img/ai4.png 尺寸一样、像素一样 = 被换成了默认图。玩家自己换过的头像不一样，不打扰。
+  // 认法：头像只有 1×1（上游更新器的蓝点），或者和 /img/ai4.png 尺寸一样、像素一样（导 JSON 的默认图）= 丢了。玩家自己换过的头像不一样，不打扰。
   // 找回：弹一条，点了按卡上的版本号拉同一版的 card.png 再导一次（聊天记录不动；世界书换回卡里自带的，和刚更新完一样，上面那段会把【User】摆好）
   var AV = { checked: '', busy: false };
   var AV_REPO = 'https://testingcf.jsdelivr.net/gh/fannnnnnn5822/pianchang-card@v';
@@ -6679,12 +6811,13 @@ var PIANCHANG_ONLINE = (function () {
     try {
       var base = VIEW.location && VIEW.location.origin ? VIEW.location.origin : '';
       var mine = await (await fetch(base + '/characters/' + encodeURIComponent(c.avatar), { cache: 'no-cache' })).arrayBuffer();
-      var def = await (await fetch(base + '/img/ai4.png', { cache: 'force-cache' })).arrayBuffer();
-      if (!avSame(await avPixels(mine), await avPixels(def))) return;
+      var pm = await avPixels(mine);
+      // 上游更新器（StageDog 自动更新角色卡）拿不到现在的头像时，拿一张 1×1 的半透明蓝点顶上：玩家看到的蓝圈就是它
+      if (!(pm.w <= 4 && pm.h <= 4) && !avSame(pm, await avPixels(await (await fetch(base + '/img/ai4.png', { cache: 'force-cache' })).arrayBuffer()))) return;
     } catch (e) { return; }
     try {
       if (typeof toastr === 'undefined') return;
-      toastr.warning('上次「更新角色卡」把这张卡的头像弄丢了（换成了酒馆的默认图）。点这条找回：按 ' + c.ver + ' 版的带图卡再导一次，聊天记录不动。', '声色片场 · 头像', {
+      toastr.warning('上次「更新角色卡」把这张卡的头像弄丢了（换成了蓝圈或酒馆的默认图）。点这条找回：按 ' + c.ver + ' 版的带图卡再导一次，聊天记录不动。', '声色片场 · 头像', {
         timeOut: 0, extendedTimeOut: 0, closeButton: true, tapToDismiss: true,
         onclick: function () { fixAvatar(c); },
       });
@@ -8256,6 +8389,49 @@ var PIANCHANG_ONLINE = (function () {
     // 市场的文字封面（照 DLsite 货架：档位配色、片名竖着压满、番号在底）
     P + ' .film{display:flex;gap:12px;align-items:flex-start;}',
     P + ' .film .info{flex:1;min-width:0;}',
+    // 封面墙（10-24 Fan：「为什么不可以和声优卡一样」）：4:3 封面在上，片名按钮在下；手机一排两张，电脑四五张
+    P + ' .film-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:0 0 14px;}',
+    P + ' .film-grid>.card.film{display:flex;flex-direction:column;gap:0;padding:0;margin:0;overflow:hidden;}',
+    P + ' .film-grid>.card.film>.info{padding:8px 10px 10px;display:flex;flex-direction:column;gap:2px;}',
+    P + ' .film-grid>.card.film .row{gap:4px 6px;}',
+    P + ' .film-grid>.card.film .info b{font-size:14px;line-height:1.35;}',
+    P + ' .film-grid>.card.film .ol-fx{margin-top:6px;}',
+    P + ' .cvbtn{display:block;width:100%;padding:0;margin:0;border:0;background:none;cursor:pointer;line-height:0;}',
+    P + ' .ttl{padding:0;margin:0;border:0;background:none;color:inherit;font:inherit;font-weight:700;font-size:14px;line-height:1.35;text-align:left;cursor:pointer;}',
+    P + ' .ttl:hover{color:var(--pc-amber);}',
+    // 放映机：黑屏 16:9，字幕一句一句走；屏幕永远是黑的，深浅主题都一样
+    P + ' .pl{margin:6px 0 12px;}',
+    P + ' .pl-scr{position:relative;aspect-ratio:16/9;background:#0b0b0d;border-radius:8px;overflow:hidden;color:#f2efe9;display:flex;flex-direction:column;justify-content:center;padding:28px 16px 16px;}',
+    P + ' .pl-top{position:absolute;left:10px;right:10px;top:8px;display:flex;justify-content:space-between;font-size:11.5px;letter-spacing:.06em;color:rgba(242,239,233,.55);font-variant-numeric:tabular-nums;}',
+    P + ' .pl-rec{color:#ff5a4f;}',
+    P + ' .pl-poster{position:absolute;inset:0;padding:0;border:0;background:#0b0b0d;cursor:pointer;line-height:0;}',
+    P + ' .pl-poster .mk-cover{width:100%;height:100%;aspect-ratio:auto;filter:brightness(.82);}',
+    P + ' .pl-big{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:rgba(0,0,0,.62);color:#fff;font-size:24px;line-height:58px;text-align:center;box-shadow:0 0 0 2px rgba(255,255,255,.75);}',
+    P + ' .pl-pvtag{position:absolute;right:8px;top:8px;padding:2px 8px;border-radius:4px;background:#ff5a4f;color:#fff;font-size:12px;line-height:1.5;font-weight:700;}',
+    P + ' .pl-title{text-align:center;display:flex;flex-direction:column;gap:8px;}',
+    P + ' .pl-title b{font-size:20px;line-height:1.35;font-weight:900;}',
+    P + ' .pl-title span{font-size:12.5px;color:rgba(242,239,233,.65);}',
+    P + ' .pl-scene{display:flex;flex-direction:column;gap:3px;}',
+    P + ' .pl-scene em{font-style:normal;font-size:30px;font-weight:900;color:#ffb347;line-height:1;}',
+    P + ' .pl-scene b{font-size:18px;line-height:1.35;}',
+    P + ' .pl-scene span{font-size:13px;color:rgba(242,239,233,.7);}',
+    P + ' .pl-scene i{font-style:normal;font-size:12px;color:rgba(242,239,233,.5);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
+    P + ' .pl-subs{display:flex;flex-direction:column;gap:8px;justify-content:flex-end;min-height:0;overflow:hidden;}',
+    P + ' .pl-old{opacity:.38;}',
+    P + ' .pl-l{font-size:15.5px;line-height:1.55;}',
+    P + ' .pl-l.say b{display:inline-block;margin-right:6px;padding:0 6px;border-radius:3px;background:rgba(255,179,71,.18);color:#ffb347;font-size:12.5px;line-height:1.6;vertical-align:1px;}',
+    P + ' .pl-l.act{color:rgba(242,239,233,.72);font-style:italic;font-size:14px;}',
+    P + ' .pl-l.dir{color:#8fc3ff;font-size:13.5px;}',
+    P + ' .pl-l.cap{align-self:center;padding:4px 12px;border:1px solid rgba(242,239,233,.55);font-size:14px;letter-spacing:.04em;}',
+    P + ' .pl-l.moan{color:#ff9ab8;font-style:italic;}',
+    P + ' .pl-l.pv b{display:block;font-size:12px;color:#ffb347;letter-spacing:.06em;}',
+    P + ' .pl-end{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;}',
+    P + ' .pl-end b{font-size:20px;letter-spacing:.2em;}',
+    P + ' .pl-bar{position:relative;height:4px;margin:8px 0 6px;border-radius:2px;background:var(--pc-line);}',
+    P + ' .pl-bar b{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:#ff5a4f;transition:width .3s;}',
+    P + ' .pl-bar i{position:absolute;top:-2px;width:2px;height:8px;margin-left:-1px;background:var(--pc-faint);}',
+    P + ' .pl-ctl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}',
+    P + ' .pl-tc{flex:1;text-align:right;font-size:12.5px;color:var(--pc-sub);font-variant-numeric:tabular-nums;}',
     P + ' .cover{position:relative;flex:none;width:86px;height:120px;border-radius:4px;padding:7px 7px 6px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;color:#fff;box-shadow:0 4px 10px rgba(0,0,0,.45);background:linear-gradient(160deg,#3a2a1a,#120d08);}',
     P + ' .cover.t0{background:linear-gradient(160deg,#5c7d4a,#1d2a16);}' + P + ' .cover.t1{background:linear-gradient(160deg,#3f6f99,#101e2b);}' + P + ' .cover.t2{background:linear-gradient(160deg,#b0405f,#2b0d16);}' + P + ' .cover.t3{background:linear-gradient(160deg,#6d3fa0,#1b0d29);}' + P + ' .cover.t4{background:linear-gradient(160deg,#9c1f17,#0d0303);}',
     P + ' .cover b{margin-top:14px;font-size:13px;line-height:1.25;font-weight:900;letter-spacing:.02em;text-shadow:0 1px 3px rgba(0,0,0,.6);word-break:break-all;}',
@@ -8662,7 +8838,7 @@ var PIANCHANG_ONLINE = (function () {
   var PANEL = DOC.createElement('div'); PANEL.id = PANEL_ID;
   DOC.body.appendChild(FAB); DOC.body.appendChild(PANEL);
   // 联机市场：把存档读写、渲染、记账这些递给 online.js（它加载时只定义东西，不联网）
-  if (ON) { try { ON.init({ readState: readState, save: save, render: render, toast: toast, ui: UI, identity: identity, scriptRec: scriptRec, parsed: parsed, addLedger: addLedger, addNews: addNews, panel: function () { return PANEL; }, epoch: function () { return EPOCH; } }); } catch (e) { ON = null; } }
+  if (ON) { try { ON.init({ readState: readState, save: save, render: render, toast: toast, ui: UI, identity: identity, scriptRec: scriptRec, parsed: parsed, addLedger: addLedger, addNews: addNews, filmCover: filmCover, panel: function () { return PANEL; }, epoch: function () { return EPOCH; } }); } catch (e) { ON = null; } }
   // 女优档案（profile.js）的样式它自己装（mount 时 installStyle，id = pianchang-profile-style），卸载时 destroy 收掉
   function fabRefresh(st) {
     st = st || readState();
@@ -9085,8 +9261,8 @@ var PIANCHANG_ONLINE = (function () {
     var right = f.status === 'edit' ? '<button class="btn sm pri" data-act="film-publish" data-id="' + f.id + '">剪好了，上架</button>'
       : f.status === 'pulled' ? '<span class="err">方正抽查：' + esc(f.pullWhy || '') + '</span><button class="btn sm pri" data-act="film-reedit" data-id="' + f.id + '">重剪再上架（' + esc(money(E.reEdit)) + '）</button>'
       : f.status === 'released' ? '<span class="faint">累计 ' + (f.sales || 0) + ' 份' + (inWin ? ' · 审查中心抽查期到 ' + esc(C.mdShort(C.checkEnd(f))) : f.checkOk ? ' · 方正抽查过了' : '') + '</span>' : '';
-    var cover = filmCover(st, f, { gray: f.status === 'withdrawn' || f.status === 'pulled' });
-    return '<div class="card film" data-pc-card="film" data-id="' + esc(f.id) + '" data-status="' + esc(f.status) + '">' + cover + '<div class="info"><div class="row"><b>《' + esc(f.title) + '》</b><span class="tag' + (f.status === 'pulled' ? ' ng' : '') + '">' + s + '</span>' + (f.pov ? '<span class="tag">第一视角</span>' : f.self === 'obj' ? '<span class="tag">自己上</span>' : '') + (f.dirBy ? '<span class="tag gr">' + esc(f.dirBy) + '导</span>' : '') + '</div><div class="faint">' + esc(f.no || '') + ' · ' + esc((f.cast || []).join('、')) + '</div>' +
+    var cover = filmCover(st, f, { gray: f.status === 'withdrawn' || f.status === 'pulled', size: 'tile' });
+    return '<div class="card film" data-pc-card="film" data-id="' + esc(f.id) + '" data-status="' + esc(f.status) + '">' + (ON ? '<button class="cvbtn" data-act="ol-own" data-id="' + esc(f.id) + '" data-play="1" aria-label="放这部">' + cover + '</button>' : cover) + '<div class="info"><div class="row"><b>《' + esc(f.title) + '》</b><span class="tag' + (f.status === 'pulled' ? ' ng' : '') + '">' + s + '</span>' + (f.pov ? '<span class="tag">第一视角</span>' : f.self === 'obj' ? '<span class="tag">自己上</span>' : '') + (f.dirBy ? '<span class="tag gr">' + esc(f.dirBy) + '导</span>' : '') + '</div><div class="faint">' + esc(f.no || '') + ' · ' + esc((f.cast || []).join('、')) + '</div>' +
       '<div class="faint" style="margin:4px 0">杀青 ' + esc(C.mdShort(f.wrapDay)) + ' · NG ' + (f.ng || 0) + ' 次' + (f.mishaps ? ' · 意外 ' + f.mishaps + ' 件' : '') + (f.status !== 'edit' ? ' · 评分 ' + f.score : '') + '</div><div class="row">' + right + '</div>' + (ON ? ON.filmExtra(f, st) : '') + '</div></div>';
   }
   // 本月销量（月榜）：我们的片 + 别家片商的片，一行一部带小封面。别家的数是「市场部打听来的」（按种子定，同一个月永远一样）
@@ -9095,7 +9271,7 @@ var PIANCHANG_ONLINE = (function () {
     var rows = board.map(function (r) {
       var f = r.ours ? st.dir.films.find(function (x) { return x.id === r.id; }) : null;
       var cv = f ? { id: f.id, title: f.title, tier: f.tier, by: ourStudio(st), cast: (f.cast || []).join(' · '), pic: filmPic(st, f) } : { id: 'r:' + r.title, title: r.title, tier: RIVAL_TIER[(COV ? COV.hash32(r.title) : 0) % 4], by: r.studio };
-      return { rank: r.rank, me: r.ours, title: '《' + r.title + '》', sub: esc(r.studio), val: r.copies + ' 份', cover: cv };
+      return { rank: r.rank, me: r.ours, act: f && ON ? 'ol-own' : '', id: f ? f.id : '', title: '《' + r.title + '》', sub: esc(r.studio), val: r.copies + ' 份', cover: cv };
     });
     if (COV && COV.rankRows) return COV.rankRows(rows);
     return '<table class="tbl"><tr><th>#</th><th>片名</th><th>片商</th><th class="n">本月</th></tr>' + board.map(function (r) { return '<tr' + (r.ours ? ' class="me"' : '') + '><td>' + r.rank + '</td><td>《' + esc(r.title) + '》</td><td>' + esc(r.studio) + '</td><td class="n">' + r.copies + ' 份</td></tr>'; }).join('') + '</table>';
@@ -9113,7 +9289,7 @@ var PIANCHANG_ONLINE = (function () {
     var groups = [['剪辑室', ['edit']], ['被抽查下架的', ['pulled']], ['在架上', ['released']], ['撤了的', ['withdrawn']]];
     if (films.some(function (f) { return f.pov; })) h += '<div class="chips"><button class="chip' + (UI.mkPov ? ' on' : '') + '" data-act="mk-pov" data-v="' + (UI.mkPov ? '' : '1') + '">第一视角</button></div>';   // 一个开关
     if (identity(st) === '社长') h += '<div class="faint" style="margin-bottom:8px">银星也在出片：月榜上标着银星映像的那几部，是戴晶那边的。</div>';
-    groups.forEach(function (g) { var fs = films.filter(function (f) { return g[1].indexOf(f.status) >= 0 && (!UI.mkPov || f.pov); }); if (fs.length) h += '<h3 class="h3">' + g[0] + '</h3>' + fs.map(function (f) { return filmRow(f, st); }).join(''); });
+    groups.forEach(function (g) { var fs = films.filter(function (f) { return g[1].indexOf(f.status) >= 0 && (!UI.mkPov || f.pov); }); if (fs.length) h += '<h3 class="h3">' + g[0] + '</h3><div class="film-grid">' + fs.map(function (f) { return filmRow(f, st); }).join('') + '</div>'; });
     var live = ON && ON.online();
     h += '<h3 class="h3">本月销量</h3>' + boardHtml(st, board) +
       '<div class="faint" style="margin-top:6px">' + (identity(st) === '社长' ? '别家的数是柯大河打听来的。进前十，戴晶会请你吃牛排（顺便打听你下一部拍什么）。' : live ? '别家的数是银星市场部打听来的。进前十，社长请吃牛排；玩家之间真买真卖的剧本，在「排行」。' : !ON ? '别家的数是银星市场部打听来的。进前十，社长请吃牛排。' : ON.isOff() ? '联机关着：这里只有市场部打听来的数。' : '连不上联机，先看市场部打听来的数。') + '</div>';
