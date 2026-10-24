@@ -60,14 +60,14 @@ var PIANCHANG_LISTS = {
     "嘴角有一道小疤",
     "肉肉的，脸圆",
     "锁骨很深，总穿一字领",
-    "天然的大胸，片商当场要验",
+    { t: "天然的大胸，片商当场要验", x: ["大胸"] },
     "一张乡下牧场广告里的脸",
     "人很瘦，臀练得很结实",
-    "胸是做的，钱是老客出的",
+    { t: "胸是做的，钱是老客出的", x: ["大胸"] },
     { t: "一张没见过世面的乖脸", a: "少女感" },
     { t: "一笑两个酒窝", x: ["酒窝"] },
     "一身碎花棉布裙，像刚从乡下来",
-    "一排瘦姑娘里，就她最丰满",
+    { t: "一排瘦姑娘里，就她最丰满", x: ["大胸"] },
     "戴一顶一看就是假的假发",
     "鞋太贵，一眼看出不是这行的",
     "某些角度像一位老电影明星",
@@ -239,6 +239,13 @@ var PIANCHANG_LISTS = {
     59: { h: "金发", s: ["中长"], k: "白皙", v: ["甜美", "成熟"], a: "熟女", x: ["眼镜"] },
     60: { h: "黑发", s: ["马尾"], k: "自然", v: ["知性", "冷艳"], a: "熟女", x: ["眼镜"] },
     61: { h: "金发", s: ["短发"], k: "小麦", v: ["辣妹", "文艺"], a: "二十多", x: [] },
+    // 62–67：凌老师补的立绘（10-24 Fan：「全是黑发大胸妹子」），发型没标，长发要求都配得上
+    62: { h: "黑发", s: [], k: "", v: [], a: "二十多", x: ["大胸"] },
+    63: { h: "黑发", s: [], k: "", v: [], a: "二十多", x: ["大胸"] },
+    64: { h: "黑发", s: [], k: "", v: [], a: "二十多", x: ["大胸"] },
+    65: { h: "黑发", s: [], k: "", v: [], a: "二十多", x: ["大胸"] },
+    66: { h: "黑发", s: [], k: "", v: [], a: "二十多", x: ["大胸"] },
+    67: { h: "黑发", s: [], k: "", v: [], a: "二十多", x: ["大胸"] },
   },
   // ── 有名字的女性 NPC 的立绘（10-23 Fan：「只有随机NPC有头像」→ 全配）：声色事务所 portraits/pNN.webp 里按世界书外形挑的号，随机候选人不抽这些号 ──
   // 男性 NPC（男优、柯大河、邱德海、方正……）那批图里没有男的，照旧显示首字
@@ -1158,7 +1165,7 @@ var PIANCHANG_CORE = (function () {
   // ── 外形和立绘（10-24）：外形 = 发型那一句 + 一处特征；立绘先找标签相符的，没有就找不冲突的 ──
   var PT = L.portraitTags || {};
   var LONG_STYLES = ['长直', '长卷', '中长', '马尾', '双马尾', '盘发'];
-  var SEEN_X = ['眼镜', '雀斑', '耳洞多', '晒痕', '痣'];   // 立绘上看得出来的特征；纹身、酒窝这类图上看不出来，不算
+  var SEEN_X = ['眼镜', '雀斑', '耳洞多', '晒痕', '痣', '大胸'];   // 立绘上看得出来的特征；纹身、酒窝这类图上看不出来，不算
   function ageBand(age) { age = Number(age) || 26; return age <= 23 ? 'young' : age >= 31 ? 'old' : 'mid'; }
   function featObj(x) { return typeof x === 'string' ? { t: x } : (x || { t: '' }); }
   // 一份外形要求：{ h 发色, s [发型], k 肤色, a 年龄感, x [特征] }
@@ -1176,14 +1183,14 @@ var PIANCHANG_CORE = (function () {
     if (req.k && p.k && ((req.k === '小麦') !== (p.k === '小麦')) && p.k !== '自然') return 0;
     if (req.a === '少女感' && p.a === '熟女') return 0;
     if ((band === 'young' && p.a === '熟女') || (band === 'old' && p.a === '少女感')) return 0;
-    var all = (req.s || []).every(function (s) { return ps.indexOf(s) >= 0; }) && (!req.k || p.k === req.k) && (!req.a || p.a === req.a) && (req.x || []).every(function (x) { return SEEN_X.indexOf(x) < 0 || (p.x || []).indexOf(x) >= 0; });
+    var all = (req.s || []).every(function (s) { return ps.indexOf(s) >= 0 || (!ps.length && s !== '短发'); })   // 发型没标的图（p62 起凌老师补的那批，全是黑发大胸）：长发都算相符，短发上面已经判冲突 && (!req.k || p.k === req.k) && (!req.a || p.a === req.a) && (req.x || []).every(function (x) { return SEEN_X.indexOf(x) < 0 || (p.x || []).indexOf(x) >= 0; });
     return all ? 2 : 1;
   }
   function freeFaces(used) { var u = {}; (used || []).forEach(function (n) { u[n] = 1; }); var out = []; for (var i = 1; i <= PORTRAIT_N; i++) if (!u[i]) out.push(i); return out; }
   // 先抽发型：按空着的、标签相符的立绘数加权（有图可配的发型更常抽到）；再抽一处不跟发型打架的特征
   function drawLook(age, used, cnt) {
     var free = freeFaces(used), hs = L.lookHair || [];
-    var w = hs.map(function (h) { var r = lookReq(h, null), n = free.filter(function (p) { return portraitFit(p, r, age) === 2; }).length; return [h, n]; });
+    var w = hs.map(function (h) { var r = lookReq(h, null), n = free.filter(function (p) { return PT[p] && (PT[p].s || []).length && portraitFit(p, r, age) === 2; }).length; return [h, n]; });   // 发型没标的图不算进权重，免得黑长发被抽得过多
     var hair = w.some(function (x) { return x[1] > 0; }) ? pickW(w) : pick(hs);
     var feats = (L.look || []).filter(function (f) { f = featObj(f); if (!hair) return true; if ((f.s || []).indexOf('短发') >= 0 && (hair.s || []).some(function (s) { return LONG_STYLES.indexOf(s) >= 0; })) return false; if (f.a === '少女感' && ageBand(age) === 'old') return false; return true; });
     // 特征也要有图可配：跟发型合起来，空着的图里至少一张不冲突；原型中满两条的跳过
@@ -1198,6 +1205,9 @@ var PIANCHANG_CORE = (function () {
     var free = freeFaces(used);
     if (!free.length) return 1 + randInt(PORTRAIT_N);
     var best = free.filter(function (p) { return portraitFit(p, req, age) === 2; });
+    // 发型没标的图是「长发都算相符」的宽松配法：有标得准的图时，一半机会只在标得准的里挑（不然它们出场太多，抽 9000 人占到四分之一）
+    var exact = best.filter(function (p) { return PT[p] && (PT[p].s || []).length; });
+    if (exact.length && exact.length < best.length && (req.x || []).indexOf('大胸') < 0 && rndFloat() < 0.5) best = exact;
     if (!best.length) best = free.filter(function (p) { return portraitFit(p, req, age) === 1; });
     return pick(best.length ? best : free);
   }
@@ -1273,10 +1283,11 @@ var PIANCHANG_CORE = (function () {
   // ── 立绘（v0.1.3，Fan：「女优面试的头像就还是用声优卡里面那些」）──
   // 直接指声色事务所发布仓库的 portraits/pNN.webp（同一个作者，不复制图片）。人身上只存一个号（portrait: 1…PORTRAIT_N），地址现拼；
   // 以后那边加图只改 PORTRAIT_N（照 shacho.js），老存档的号不动。标签在 lists.portraitTags
-  var PORTRAIT_N = 61;
+  var PORTRAIT_N = 67;
   var PORTRAIT_BASE = 'https://testingcf.jsdelivr.net/gh/fannnnnnn5822/voice-agency-card@main/portraits';
+  var PORTRAIT_OWN = 62, PORTRAIT_BASE2 = 'https://testingcf.jsdelivr.net/gh/fannnnnnn5822/pianchang-card@main/portraits';   // p62 起是凌老师补的立绘，放在片场自己的仓库
   function portraitOk(n) { n = Number(n); return n >= 1 && n <= PORTRAIT_N && Math.floor(n) === n; }
-  function portraitUrl(n) { return portraitOk(n) ? PORTRAIT_BASE + '/p' + String(n).padStart(2, '0') + '.webp' : ''; }
+  function portraitUrl(n) { return portraitOk(n) ? (Number(n) >= PORTRAIT_OWN ? PORTRAIT_BASE2 : PORTRAIT_BASE) + '/p' + String(n).padStart(2, '0') + '.webp' : ''; }
   // 随机挑一个没在用的号；全在用就随便挑（撞脸好过没脸）
   function pickPortrait(used) {
     var free = freeFaces(used);
