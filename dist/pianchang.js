@@ -558,7 +558,7 @@ var PIANCHANG_CORE = (function () {
     if (dirLike(opt.identity) && lineup === '一男三女') lineup = '一男两女';
     var nF = LINEUP_N[lineup][0], nM = LINEUP_N[lineup][1], multi = lineup !== '一男一女';
     var P = [], add = function (k, v) { if (v) P.push([k, v]); };
-    var length = lineup === '一男三女' ? '短篇' : (rndFloat() < (ti <= 1 ? 0.7 : 0.5) ? '短篇' : '长篇');
+    var length = lineup === '一男三女' ? '短篇' : (opt.length === '短篇' || opt.length === '长篇') ? opt.length : (rndFloat() < (ti <= 1 ? 0.7 : 0.5) ? '短篇' : '长篇');
     add('档位', tier); add('阵容', lineup); add('长度', length);
     var povAt = P.length;   // 视角等企划、他是谁抽完再定，插回这里
     var plans = poolOf('plan', ti, true), plan = null;
@@ -622,6 +622,66 @@ var PIANCHANG_CORE = (function () {
   function brace(k, v) { return '{' + k + '：' + String(v == null ? '' : v).replace(/[{}｛｝]/g, '') + '}'; }
   function slotBraces(sl) { return (sl.pairs || []).map(function (p) { return brace(p[0], p[1]); }).join(''); }
   function slotGet(sl, k) { var p = (sl.pairs || []).find(function (x) { return x[0] === k; }); return p ? p[1] : ''; }
+
+  // ═════════════ 写剧本的折中模式（v0.1.15，设计稿第 8 节）：「我出点子」「我全写 → 交给编剧补全」═════════════
+  // idea = { title 片名, pitch 一句卖点, scenes [一定要有的场，一行一场], lines [一定要有的台词], draft 玩家整份草稿（交给编剧补全那条路） }
+  var IDEA_PUNCT = /[\s「」“”"'‘’，。！？…、,.!?~～—\-]/g;
+  function ideaLines(t) { return String(t || '').split(/\r?\n/).map(function (x) { return x.replace(/^\s*(?:[-*•]|\d+[.、)）])\s*/, '').trim(); }).filter(Boolean); }
+  // 草稿里的台词行：「名字：「……」」这种，✍ 标记和「要原样用上」都看这几句
+  function draftLines(t) { return String(t || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return /^[^#：:]{1,8}[：:]\s*[「“"]/.test(l); }).slice(0, 20); }
+  function makeIdea(o) {
+    o = o || {};
+    var idea = { title: clip(String(o.title || '').replace(/[《》]/g, ''), 60), pitch: clip(o.pitch || '', 120), scenes: ideaLines(o.scenes).slice(0, 8).map(function (x) { return clip(x, 120); }), lines: ideaLines(o.lines).slice(0, 12).map(function (x) { return clip(x, 60); }), draft: String(o.draft || '').trim().slice(0, 4000) };
+    if (idea.draft && !idea.lines.length) idea.lines = draftLines(idea.draft);
+    return idea;
+  }
+  function ideaEmpty(idea) { return !idea || !(idea.title || idea.pitch || idea.scenes.length || idea.lines.length || idea.draft); }
+  function ideaText(idea) { return idea ? [idea.title, idea.pitch].concat(idea.scenes, idea.lines, [idea.draft]).join('\n') : ''; }
+  // 点子里写了阵容（两男一女……）就照着抽；没写就照常
+  function ideaLineup(t) { var m = String(t || '').match(/一男一女|一男两女|一男二女|两男一女|二男一女|一男三女/); if (!m) return ''; return { '一男二女': '一男两女', '二男一女': '两男一女' }[m[0]] || m[0]; }
+  // 草稿里写了档位就用草稿的
+  function ideaTier(t) { var m = String(t || '').match(/档位\s*[：:]\s*([^｜|\n]+)/), x = m ? m[1].replace(/\s+/g, '') : ''; return x ? TIERS.find(function (k) { return x.indexOf(k.replace(/\s+/g, '')) === 0; }) || '' : ''; }
+  function draftSceneN(t) { return (String(t || '').match(/^\s*#\s*\d{1,2}/mg) || []).length; }
+  // 点子盖到抽好的格子上：片名、卖点盖住「企划」那一格；场数不少于玩家写的场数（最多 8 场）
+  function applyIdea(sl, idea) {
+    sl.idea = idea;
+    if (idea.pitch || idea.title) sl.pairs.forEach(function (p) { if (p[0] === '企划') p[1] = idea.pitch || idea.title; });
+    var need = Math.max(idea.scenes.length, idea.draft ? draftSceneN(idea.draft) : 0);
+    if (need > sl.n) { sl.n = Math.min(8, need); sl.pairs.forEach(function (p) { if (p[0] === '场数') p[1] = String(sl.n); }); }
+    return sl;
+  }
+  function ideaBlock1(idea) {
+    if (!idea) return '';
+    if (idea.draft) return '【玩家的草稿】（玩家自己写的，格式可能不全）\n' + idea.draft + '\n草稿是这一部的底子：片名、角色、档位、玩家写了的场照用，场名和场号可以理顺；草稿里没写的照【抽到的】补全，跟草稿冲突的格子不用。草稿里的台词，第二步写到那一场时原样用上。\n';
+    var a = [];
+    if (idea.title) a.push('片名：《' + idea.title + '》（照用）');
+    if (idea.pitch) a.push('卖点：' + idea.pitch + '（照这个意思写顺）');
+    if (idea.scenes.length) a.push('一定要有的几场（排进分场表，场号你来排，意思不换）：' + idea.scenes.map(function (x) { return '「' + x + '」'; }).join('、'));
+    if (idea.lines.length) a.push('一定要有的台词（第二步写台词时原样用上，这一步把它们安排进合适的场）：' + idea.lines.map(function (x) { return '「' + x + '」'; }).join('、'));
+    return a.length ? '【玩家定的】（这几样优先；格子跟它冲突的就不用）\n' + a.join('\n') + '\n' : '';
+  }
+  // 台词比对：去掉「谁：」和引号、标点，取前 8 个字
+  function lineCore(l) { return Array.from(String(l || '').replace(/^[^：:「“"]{1,8}[：:]/, '').replace(IDEA_PUNCT, '')).slice(0, 8).join(''); }
+  function ideaUnused(sc, n) {
+    var idea = sc.idea; if (!idea || !idea.lines || !idea.lines.length) return [];
+    var other = (sc.scenes || []).filter(function (x) { return x.n !== n; }).map(function (x) { return String(x.text || '').replace(IDEA_PUNCT, ''); }).join('');
+    return idea.lines.filter(function (l) { var c = lineCore(l); return c && other.indexOf(c) < 0; });
+  }
+  function ideaBlock2(sc, n) {
+    var idea = sc.idea; if (!idea) return '';
+    var last = n === Math.max.apply(null, (sc.scenes || []).map(function (x) { return x.n; }).concat([n]));
+    var un = ideaUnused(sc, n), a = [];
+    if (idea.draft) a.push('【玩家的草稿】\n' + Array.from(idea.draft).slice(0, 1500).join('') + '\n草稿里写了这一场的，照草稿的意思补全、润色。');
+    if (!idea.draft && idea.scenes.length) a.push('【玩家写的场】' + idea.scenes.map(function (x) { return '「' + x + '」'; }).join('、') + '\n这一场要是其中之一，意思不换，你只补全和润色。');
+    if (un.length) a.push('【要用上的台词】' + un.map(function (x) { return '「' + x + '」'; }).join('、') + '\n' + (last ? '这是最后一场，上面还没用上的台词这一场都要用上。' : '放得进这一场的就用上，放不进的留给后面的场。') + '台词原样出现，可以改标点和一两个字让它读顺；谁说的照玩家写的。');
+    return a.length ? a.join('\n') + '\n' : '';
+  }
+  // 看剧本时，玩家自己写的台词前面标 ✍
+  function markIdea(text, idea) {
+    if (!idea || !idea.lines || !idea.lines.length) return String(text || '');
+    var cores = idea.lines.map(lineCore).filter(function (c) { return c.length >= 3; });
+    return String(text || '').split('\n').map(function (l) { var t = l.replace(IDEA_PUNCT, ''); return !/^✍/.test(l) && !/^#/.test(l) && cores.some(function (c) { return t.indexOf(c) >= 0; }) ? '✍ ' + l : l; }).join('\n');
+  }
   // 开拍时代码每场再掷一次片场意外（三成）
   function rollMishap(tier, avoid) {
     if (rndFloat() >= 0.3) return '';
@@ -712,7 +772,7 @@ var PIANCHANG_CORE = (function () {
     var ti = tierIdx(sl.tier), poses = sl.poses || slotPoses(sl);
     var cam = poseCamLines(poses);
     var u = '【调子】' + sl.tier + '：' + TONE[sl.tier] + '\n' + STYLE_JA + '\n' + (sl.pov ? STYLE_JA_POV + '\n' : '') + (sl.multi ? STYLE_JA_MULTI + '\n' : '') + RULE_LINE + '\n' +
-      '【抽到的】' + slotBraces(sl) + '\n' +
+      '【抽到的】' + slotBraces(sl) + '\n' + ideaBlock1(sl.idea) +
       (cam.length ? '【姿势配机位】' + cam.join('／') + '\n' : '') +
       '【分类】从这些里挑这一部有的（几个都行）：' + tagNames(ti).join(' ') + '\n' +
       '抽到的格子挑用得上的用；跟企划对不上、硬塞进去会别扭的那一两样就不用，不用解释它们为什么凑在一起。事件只当开拍的理由，一两句交代完。开场用在 #1，收尾用在最后一场，拍摄限制全片都守；片场意外用得上就写进某一场的「变」。' +
@@ -770,7 +830,7 @@ var PIANCHANG_CORE = (function () {
       '【这一场】' + sceneHeadBlock(s, multi) + '\n' +
       (cam.length ? '【姿势配机位】' + cam.join('／') + '\n' : '') +
       (uses.length ? '【这一场要用】' + uses.join('；') + '\n' : '') +
-      (sc.slotMishap && hasMishap ? '【片场意外】' + sc.slotMishap + '\n' : '') +
+      (sc.slotMishap && hasMishap ? '【片场意外】' + sc.slotMishap + '\n' : '') + ideaBlock2(sc, n) +
       '【格式】\n#' + n + ' 场名｜地点\n在场：…\n玩法：…\n' + (ti >= 2 ? '姿势：…（没有本番不写）\n' : '') + '要：…\n' + (multi ? '之间：…（两个以上同性同框才写）\n' : '') +
       (multi ? '称呼：「台词」\n' : '她：「台词」\n' + (pov ? '他（画外）：「台词」（最多一句）\n' : '他：「台词」\n')) + '导：「台词」　配·谁：「台词」　字：字幕卡或手机消息\n' +
       (ti >= 1 ? '喘：一句喘息样板' + (multi ? '（多人写「喘·称呼：」）' : '') + '\n' : '') +
@@ -1523,7 +1583,7 @@ var PIANCHANG_CORE = (function () {
     poseFamily: poseFamily, POSE_CAM: POSE_CAM, poseCamLines: poseCamLines, scenePoses: scenePoses, drawPoses: drawPoses, tagNames: tagNames, fixTags: fixTags, isPovSc: isPovSc, POV: POV, povOf: povOf, tagFix: tagFix, headForShoot: headForShoot, ncKey: ncKey, NC_RECENT: NC_RECENT,
     STYLE_JA: STYLE_JA, STYLE_JA_POV: STYLE_JA_POV, MULTI_RULES: MULTI_RULES, scFilterOk: scFilterOk, scFilterOn: scFilterOn, scFilterBar: scFilterBar, scFilterClick: scFilterClick,
     buildStep1: buildStep1, buildStep2: buildStep2, STEP1_RETRY: STEP1_RETRY, STEP2_RETRY: STEP2_RETRY,
-    parseScript: parseScript, parseScene: parseScene, mergeScene: mergeScene, scriptSane: scriptSane, pickMishapScene: pickMishapScene, parseRoles: parseRoles, scriptAllText: scriptAllText, cleanRaw: cleanRaw, sgFailKind: sgFailKind, failText: failText,
+    parseScript: parseScript, parseScene: parseScene, mergeScene: mergeScene, scriptSane: scriptSane, pickMishapScene: pickMishapScene, parseRoles: parseRoles, scriptAllText: scriptAllText, makeIdea: makeIdea, ideaEmpty: ideaEmpty, ideaText: ideaText, ideaLineup: ideaLineup, ideaTier: ideaTier, applyIdea: applyIdea, ideaUnused: ideaUnused, markIdea: markIdea, lineCore: lineCore, cleanRaw: cleanRaw, sgFailKind: sgFailKind, failText: failText,
     markPlayer: markPlayer, castLine: castLine, shootPrompt: shootPrompt, softPose: softPose, softLines: softLines, doneLine: doneLine, statusPrompt: statusPrompt, parseStatus: parseStatus,
     PORTRAIT_N: PORTRAIT_N, PORTRAIT_BASE: PORTRAIT_BASE, portraitOk: portraitOk, portraitUrl: portraitUrl, pickPortrait: pickPortrait, fillPortraits: fillPortraits,
     drawCand: drawCand, drawCands: drawCands, drawTraits: drawTraits, drawSpice: drawSpice, spicePool: spicePool, drawLook: drawLook, portraitFit: portraitFit, pickPortraitFor: pickPortraitFor, reqOfText: reqOfText, archOf: archOf, NC_LAYERS: NC_LAYERS, NC_KEYS: NC_KEYS, NC_LABEL: NC_LABEL, ncLines: ncLines, candLines: candLines, npcFaces: npcFaces, drawXP: drawXP, drawNG: drawNG, filmFee: filmFee, buildCandPrompt: buildCandPrompt, CAND_RETRY: CAND_RETRY, parseCands: parseCands, parseCandOne: parseCandOne, personLines: personLines,
@@ -7423,9 +7483,10 @@ var PIANCHANG_ONLINE = (function () {
       var s1 = await writeStep1(sl);
       if (ep !== EPOCH) return null;   // 写的时候切了聊天：这份不存
       var sc = s1.parsed; if (!sc.tier) sc.tier = sl.tier;
+      if (sl.idea) sc.idea = sl.idea;   // 第二步写每一场时带上玩家写的场和台词
       C.fixTags(sc, sl);   // 分类照白名单过一遍，清单外的剔掉，个数不限；不到两个按企划补
       sc.slotMishap = C.slotGet(sl, '片场意外'); sc.mishapScene = C.pickMishapScene(sc, sc.slotMishap);
-      rec = { id: C.uid('s'), title: sc.title, tier: sc.tier, lineup: sc.lineup, raw: C.scriptAllText(sc), slots: C.slotBraces(sl), source: 'gen', day: readState().day, gigId: (extra && extra.gigId) || '', mishap: sc.slotMishap, mishapScene: sc.mishapScene };
+      rec = { id: C.uid('s'), title: sc.title, tier: sc.tier, lineup: sc.lineup, raw: C.scriptAllText(sc), slots: C.slotBraces(sl), source: sl.idea ? 'mix' : 'gen', idea: sl.idea || null, day: readState().day, gigId: (extra && extra.gigId) || '', mishap: sc.slotMishap, mishapScene: sc.mishapScene };
       await save(function (s) { s[face].scripts.unshift(rec); if (s[face].scripts.length > 30) s[face].scripts = s[face].scripts.slice(0, 30); });
       GEN.sid = rec.id;
       for (var i = 0; i < sc.scenes.length; i++) {
@@ -7446,7 +7507,7 @@ var PIANCHANG_ONLINE = (function () {
     if (GEN.busy) { toast('info', '还有一份剧本在写'); return; }
     var st = readState(), rec = st[face].scripts.find(function (x) { return x.id === sid; }); if (!rec) return;
     var sc = clone(parsed(rec)); if (!sc) return;
-    sc.slotMishap = rec.mishap || ''; sc.mishapScene = rec.mishapScene || 0;
+    sc.slotMishap = rec.mishap || ''; sc.mishapScene = rec.mishapScene || 0; if (rec.idea) sc.idea = rec.idea;
     var ep = EPOCH;
     GEN.busy = true; GEN.step = '补写 #' + n; GEN.err = ''; render();
     try { await writeScene(sc, n); if (ep !== EPOCH) return; var raw = C.scriptAllText(sc); await save(function (s) { var x = s[face].scripts.find(function (y) { return y.id === sid; }); if (x) x.raw = raw; }); applyShoot(); toast('success', '#' + n + ' 写好了'); }
@@ -8728,6 +8789,50 @@ var PIANCHANG_ONLINE = (function () {
       (rec.source !== 'lib' && full < sc.scenes.length ? '<button class="btn sm" data-act="sc-fill" data-id="' + rec.id + '">补写台词</button>' : '') +
       (rec.source !== 'lib' ? '<button class="btn sm" data-act="sc-del" data-id="' + rec.id + '">删</button>' : '') + '</div></div>';
   }
+  // 写剧本弹窗顶上的三个小页签（v0.1.15，设计稿第 8 节）
+  function genTabs(cur) {
+    return '<div class="chips pc-gentabs">' + [['rand', '🎲 随机'], ['idea', '💡 我出点子'], ['mine', '✍ 我全写']].map(function (x) { return '<button class="chip' + (x[0] === cur ? ' on' : '') + '" data-act="gen-mode" data-m="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>';
+  }
+  function ideaBody(m) {
+    var f = m.idea || UI.gen.idea || {}, chip = function (act, val, cur, label) { return '<button class="chip' + (val === cur ? ' on' : '') + '" data-act="' + act + '" data-t="' + esc(val) + '">' + esc(label || val) + '</button>'; };
+    return '<div class="eb">MY IDEA</div><h2 class="h">💡 我出点子</h2><div class="sub">写你想要的，全都可以留空，只写一句也行（比如「擦边博主第一次拍擦边视频」）。没写的照常从格子里抽，编剧补全、润色；你写的台词原样留着，看剧本时前面标 ✍。写好的本子可以直接拿去「按剧本招」。</div>' +
+      '<div class="lbl">片名</div><input type="text" id="pc-idea-title" maxlength="60" value="' + esc(f.title || '') + '" placeholder="不写就让编剧起">' +
+      '<div class="lbl">一句卖点</div><input type="text" id="pc-idea-pitch" maxlength="120" value="' + esc(f.pitch || '') + '" placeholder="比如：丈夫睡在隔壁，她不敢出声">' +
+      '<div class="lbl">档位</div><div class="chips">' + C.TIERS.map(function (t) { return chip('gen-tier', t, UI.gen.tier); }).join('') + '</div>' +
+      '<div class="lbl">视角 · 长短</div><div class="chips">' + chip('idea-pov', '', m.ipov || '', '视角随便') + chip('idea-pov', 'pov', m.ipov || '', '第一视角') + '<span style="flex:0 0 10px"></span>' + chip('idea-len', '', m.ilen || '', '长短随便') + chip('idea-len', '短篇', m.ilen || '') + chip('idea-len', '长篇', m.ilen || '') + '</div>' +
+      '<div class="lbl">一定要有的几场（一行一场）</div><textarea id="pc-idea-scenes" style="min-height:84px" placeholder="浴室｜她给他擦背，擦着擦着……&#10;阳台｜晾衣服的时候被人从后面抱住">' + esc(f.scenes || '') + '</textarea>' +
+      '<div class="lbl">一定要有的台词（一行一句，可以写是谁说的）</div><textarea id="pc-idea-lines" style="min-height:84px" placeholder="她：「他睡着了……小声一点。」">' + esc(f.lines || '') + '</textarea>' +
+      '<div class="faint" style="margin-top:6px">阵容写在卖点里就照着来（两男一女、一男两女……），不写就随机。</div>' +
+      (m.err ? '<div class="err">' + esc(m.err) + '</div>' : '') +
+      '<div class="act"><button class="btn" data-act="modal-x">算了</button><button class="btn pri" data-act="idea-go"' + (GEN.busy ? ' disabled' : '') + '>交给编剧写</button></div>';
+  }
+  // 重画前把表单里打的字收回 UI.modal（点档位、视角这些会重画）
+  function grabIdea() {
+    var m = UI.modal; if (!m || m.kind !== 'gen' || m.mode !== 'idea') return;
+    var v = function (id) { var e = PANEL.querySelector('#' + id); return e ? e.value : ''; };
+    m.idea = UI.gen.idea = { title: v('pc-idea-title'), pitch: v('pc-idea-pitch'), scenes: v('pc-idea-scenes'), lines: v('pc-idea-lines') };
+  }
+  // 「我出点子」→ 照常抽格子，点子盖上去，走同一套两步写
+  function ideaGo(st) {
+    grabIdea();
+    var m = UI.modal, idea = C.makeIdea(m.idea);
+    if (C.ideaEmpty(idea)) { m.err = '至少写一样：片名、卖点、一场或者一句台词都行。只想随机就点上面的「随机」。'; render(); return; }
+    var sl = C.drawSlots(UI.gen.tier, { identity: identity(st), pov: m.ipov === 'pov', length: m.ilen || '', lineup: C.ideaLineup(C.ideaText(idea)) });
+    C.applyIdea(sl, idea);
+    UI.modal = null; UI.gen.idea = null; render();
+    writeScript(faceKey(st), sl);
+  }
+  // 「我全写」→ 交给编剧补全：整份草稿当底子，档位、阵容从草稿里认，认不出照当前档位抽
+  function customAi(st) {
+    var ta = PANEL.querySelector('#pc-custom'), text = ta ? ta.value : '';
+    UI.modal.text = text;
+    if (!String(text).trim()) { UI.modal.err = '先写点什么：片名、几场、几句台词都行。'; render(); return; }
+    var idea = C.makeIdea({ draft: text }), tier = C.ideaTier(text) || UI.gen.tier;
+    var sl = C.drawSlots(tier, { identity: identity(st), lineup: C.ideaLineup(text), pov: /第一视角|主观/.test(text) });
+    C.applyIdea(sl, idea);
+    UI.modal = null; UI.gen.draft = ''; render();
+    writeScript(faceKey(st), sl);
+  }
   function genBox() {
     if (GEN.busy) return '<div class="card hl"><div class="busy">✍ 在写剧本：' + esc(GEN.step) + '</div><div class="faint">两步写：先片头和分场表，再一场一场写台词，每一步都很短，不会被截断。可以关掉面板等。</div></div>';
     return GEN.err ? '<div class="card warn"><div class="err">' + esc(GEN.err) + '</div></div>' : '';
@@ -8751,7 +8856,7 @@ var PIANCHANG_ONLINE = (function () {
     var grid = function (list) { return '<div class="grid">' + list.map(function (r) { return scriptCard(r, st, 'dir'); }).join('') + '</div>'; };
     var sect = function (title, list, empty) { var f = scFiltered(list); if (!list.length) return empty ? '<h3 class="h3">' + title + '</h3>' + empty : ''; return '<h3 class="h3">' + title + (on ? '<span class="faint">（' + f.length + ' / ' + list.length + '）</span>' : '') + '</h3>' + (f.length ? grid(f) : '<div class="empty">这一栏没有对得上筛选的。</div>'); };
     return '<div class="eb">SCRIPTS</div><h2 class="h">企划 · 剧本</h2>' +
-      '<div class="row" style="margin-bottom:12px"><button class="btn pri" data-act="gen-open"' + (GEN.busy ? ' disabled' : '') + '>🎲 随机写剧本</button><button class="btn" data-act="custom-open">✍ 自己写</button></div>' + genBox() +
+      '<div class="row" style="margin-bottom:12px"><button class="btn pri" data-act="gen-open"' + (GEN.busy ? ' disabled' : '') + '>🎲 随机写剧本</button><button class="btn" data-act="idea-open"' + (GEN.busy ? ' disabled' : '') + '>💡 我出点子</button><button class="btn" data-act="custom-open">✍ 自己写</button></div>' + genBox() +
       '<div class="lbl">筛选</div>' + C.scFilterBar(UI.scf, 'scf', scTagList(st.dir.scripts.concat(lib))) +
       sect('我写的', mine, '<div class="empty">还没有。点「随机写剧本」：从格子里抽几样，编剧照着写。</div>') +
       sect('买来的（玩家剧本）', bought) +
@@ -9057,15 +9162,16 @@ var PIANCHANG_ONLINE = (function () {
     else if (m.kind === 'byscript') body = byScriptHtml(st, m);
     else if (m.kind === 'sign') { var c = CUR && CUR.cands.find(function (x) { return x.id === m.id; }); body = '<div class="eb">SIGN</div><h2 class="h">签下 ' + esc(c ? c.realName : '') + '</h2><div class="sub">起一个艺名（1 到 6 个字）。签约金 ' + esc(money(c ? c.signFee : 0)) + '，一部片酬 ' + esc(money(c ? c.fee : 0)) + '。明天（' + esc(C.mdText(st.day + LAW.signToShoot)) + '）起就能进棚。</div><input type="text" id="pc-stage-in" maxlength="6" placeholder="艺名" style="margin-top:10px">' + (m.err ? '<div class="err">' + esc(m.err) + '</div>' : '') + '<div class="act"><button class="btn" data-act="modal-x">再想想</button><button class="btn pri" data-act="sign-ok" data-id="' + esc(m.id) + '">签</button></div>'; }
     else if (m.kind === 'endday') body = '<div class="eb">END OF DAY</div><h2 class="h">' + (m.n > 1 ? '跳到 ' + esc(C.mdText(st.day + m.n)) + '（' + m.n + ' 天）' : '结束今天') + '</h2><div class="sub">' + (m.n > 1 ? '中间每一天照样过：月初结账、发售、片酬到账、新片约都会算。' : '明天是 ' + esc(C.mdText(st.day + 1)) + '。') + (markText(st, st.day + m.n) ? '那天：' + esc(markText(st, st.day + m.n)) : '') + '</div>' + (curShoot(st) ? '<div class="err">片场还在拍：过了今天也接着算这一部。</div>' : '') + '<div class="act"><button class="btn" data-act="modal-x">算了</button><button class="btn pri" data-act="endday-ok" data-n="' + m.n + '">好</button></div>';
-    else if (m.kind === 'script') { var rec = scriptRec(st, m.id), sc = parsed(rec); body = '<div class="eb">SCRIPT</div><h2 class="h">《' + esc(sc ? sc.title : '') + '》</h2>' + (rec && rec.slots ? '<div class="faint" style="margin-bottom:6px">抽卡单：' + esc(rec.slots) + '</div>' : '') + '<div class="script">' + esc(rec ? C.scriptAllText(sc) : '') + '</div><div class="act">' + (sc ? '<button class="btn" data-act="sc-post" data-id="' + esc(m.id) + '">📄 发剧本</button>' : '') + '<button class="btn" data-act="modal-x">关上</button></div>'; }
+    else if (m.kind === 'script') { var rec = scriptRec(st, m.id), sc = parsed(rec); body = '<div class="eb">SCRIPT</div><h2 class="h">《' + esc(sc ? sc.title : '') + '》</h2>' + (rec && rec.slots ? '<div class="faint" style="margin-bottom:6px">抽卡单：' + esc(rec.slots) + '</div>' : '') + '<div class="script">' + esc(rec && sc ? C.markIdea(C.scriptAllText(sc), rec.idea) : '') + '</div><div class="act">' + (sc ? '<button class="btn" data-act="sc-post" data-id="' + esc(m.id) + '">📄 发剧本</button>' : '') + '<button class="btn" data-act="modal-x">关上</button></div>'; }
+    else if (m.kind === 'gen' && m.mode === 'idea') body = genTabs('idea') + ideaBody(m);
     else if (m.kind === 'gen') {
       var sl = m.slots;
-      body = '<div class="eb">RANDOM SCRIPT</div><h2 class="h">🎲 随机写剧本</h2><div class="sub">从格子里各抽一条（故意不配套），编剧分两步写：先片头和分场表，再一场一场写台词。</div>' +
+      body = genTabs('rand') + '<div class="eb">RANDOM SCRIPT</div><h2 class="h">🎲 随机写剧本</h2><div class="sub">从格子里各抽一条（故意不配套），编剧分两步写：先片头和分场表，再一场一场写台词。</div>' +
         '<div class="lbl">档位</div><div class="chips">' + C.TIERS.map(function (t) { return '<button class="chip' + (t === UI.gen.tier ? ' on' : '') + '" data-act="gen-tier" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
         (sl ? '<div class="lbl">抽到的（' + esc(sl.lineup) + ' · ' + esc(sl.length || '') + (sl.pov ? ' · 第一视角' : '') + ' · ' + sl.n + ' 场）</div><div class="script short">' + esc(C.slotBraces(sl).replace(/\}\{/g, '}\n{')) + '</div>' : '') +
         '<div class="act"><button class="btn" data-act="modal-x">算了</button><button class="btn" data-act="gen-draw">' + (sl ? '重抽' : '抽格子') + '</button><button class="btn pri" data-act="gen-go"' + (sl ? '' : ' disabled') + '>写</button></div>';
     }
-    else if (m.kind === 'custom') body = '<div class="eb">MY SCRIPT</div><h2 class="h">✍ 自己写剧本</h2><div class="sub">照剧本库的格式贴进来：片头几行（企划：《片名》、档位、分类、视角、长度、卖点、角色……），一行 ---，然后每场「#1 场名｜地点」+ 在场 / 玩法 / 姿势 / 要，台词可有可无（没台词的场开拍时照「要」现场演）。老格式（情 / 新）也认。</div><textarea id="pc-custom" style="min-height:260px;margin-top:10px" placeholder="企划：《片名》&#10;档位：R18常见XP｜约90分钟·5场&#10;卖点：……&#10;角色：她＝名字（年龄，身份）；他＝名字（男优位·主，身份）&#10;---&#10;#1 场名｜地点&#10;在场：她、他&#10;情：……&#10;新：起&#10;要：……">' + esc(m.text || '') + '</textarea>' + (m.err ? '<div class="err">' + esc(m.err) + '</div>' : '') + '<div class="act"><button class="btn" data-act="modal-x">算了</button><button class="btn pri" data-act="custom-save">存</button></div>';
+    else if (m.kind === 'custom') body = genTabs('mine') + '<div class="eb">MY SCRIPT</div><h2 class="h">✍ 自己写剧本</h2><div class="sub">格式不全也没关系：写多少算多少，点「交给编剧补全」，编剧照你的意思把缺的补上、润色，你写的台词原样留着。格式全了就直接「存」。完整格式照剧本库：片头几行（企划：《片名》、档位、分类、视角、长度、卖点、角色……），一行 ---，然后每场「#1 场名｜地点」+ 在场 / 玩法 / 姿势 / 要，台词可有可无（没台词的场开拍时照「要」现场演）。老格式（情 / 新）也认。</div><textarea id="pc-custom" style="min-height:260px;margin-top:10px" placeholder="企划：《片名》&#10;档位：R18常见XP｜约90分钟·5场&#10;卖点：……&#10;角色：她＝名字（年龄，身份）；他＝名字（男优位·主，身份）&#10;---&#10;#1 场名｜地点&#10;在场：她、他&#10;情：……&#10;新：起&#10;要：……">' + esc(m.text || '') + '</textarea>' + (m.err ? '<div class="err">' + esc(m.err) + '</div>' : '') + '<div class="act"><button class="btn" data-act="modal-x">算了</button><button class="btn" data-act="custom-save">存</button><button class="btn pri" data-act="custom-ai"' + (GEN.busy ? ' disabled' : '') + '>交给编剧补全</button></div>';
     else if (m.kind === 'finish') {
       var isDir = dirLike(identity(st)), A = isDir ? dirBody(st) : st.act, p = Math.round(C.finishChance(A, false) * 100), sh9 = curShoot(st);
       body = '<div class="eb">FINISH</div><h2 class="h">收尾 · #' + m.n + '</h2><div class="sub">' + (isDir ? (sh9 && !sh9.pov ? '你自己上，柯大河掌机。' : '你自己上，一手拿着机器。') + '状态 ' + (A.stamina | 0) + '，这一条大概 ' + p + '% 收得住。没收住可以再来一条，或者用特写糊弄（片子评分扣一点，抽查更容易被挑出毛病）。' : '男优不完事，全组拿不到钱。状态 ' + (A.stamina | 0) + '，这一条大概 ' + p + '% 收得住。药：状态补一截，这周第 ' + ((A.dose || 0) + 1) + ' 片，越吃越不管用，吃多了身体会出事。') + '</div>';
@@ -9372,10 +9478,16 @@ var PIANCHANG_ONLINE = (function () {
       case 'profile': if (PF) { UI.profile = id; render(); } break;   // 女优档案：盖在面板上的一整层（.pc-pfhost）
       // 企划
       case 'gen-open': UI.modal = { kind: 'gen', slots: null }; render(); break;
-      case 'gen-tier': UI.gen.tier = t.getAttribute('data-t'); if (UI.modal) UI.modal.slots = null; render(); break;
+      case 'idea-open': UI.modal = { kind: 'gen', slots: null, mode: 'idea' }; render(); break;
+      case 'gen-mode': { var gm = t.getAttribute('data-m'); grabIdea(); var cta = PANEL.querySelector('#pc-custom'); if (cta) UI.gen.draft = cta.value; if (gm === 'mine') UI.modal = { kind: 'custom', text: UI.gen.draft || '' }; else UI.modal = { kind: 'gen', slots: null, mode: gm === 'idea' ? 'idea' : '', idea: UI.modal && UI.modal.idea, ipov: UI.modal && UI.modal.ipov, ilen: UI.modal && UI.modal.ilen }; render(); break; }
+      case 'gen-tier': grabIdea(); UI.gen.tier = t.getAttribute('data-t'); if (UI.modal) UI.modal.slots = null; render(); break;
+      case 'idea-pov': grabIdea(); UI.modal.ipov = t.getAttribute('data-t'); render(); break;
+      case 'idea-len': grabIdea(); UI.modal.ilen = t.getAttribute('data-t'); render(); break;
+      case 'idea-go': ideaGo(st); break;
+      case 'custom-ai': customAi(st); break;
       case 'gen-draw': UI.modal.slots = C.drawSlots(UI.gen.tier, { identity: identity(st) }); render(); break;
       case 'gen-go': { var sl = UI.modal && UI.modal.slots; UI.modal = null; if (sl) writeScript(faceKey(st), sl); break; }
-      case 'custom-open': UI.modal = { kind: 'custom', text: '' }; render(); break;
+      case 'custom-open': UI.modal = { kind: 'custom', text: UI.gen.draft || '' }; render(); break;
       case 'custom-save': { var ta = PANEL.querySelector('#pc-custom'); UI.modal.text = ta ? ta.value : ''; saveCustom(UI.modal.text); break; }
       case 'sc-view': UI.modal = { kind: 'script', id: id }; render(); break;
       case 'todo-cast': todoMark('cast').then(render); break;
