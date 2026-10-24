@@ -2896,13 +2896,13 @@ var PIANCHANG_COVER = (function () {
     '%P% .mk-cover.strip:not(.L-mag):not(.L-tate) .ca{display:none;}',
     '%P% .mk-cover.strip .ft{flex-direction:column;align-items:flex-start;gap:calc(var(--u)*1.2);left:7%;}',
     '%P% .mk-cover.strip .tg.g1{display:none;}',
-    '%P% .mk-cover.strip{padding-bottom:36%;}',
+    '%P% .mk-cover.strip{padding:42px 19px 117px;}',   // v0.1.12：% 内边距是按整张卡的宽度算的，宽屏上封面被撑到五百多像素高（凌老师实测）；钉成手机上原来的像素值
     '%P% .mk-cover.strip.L-quote .q2,%P% .mk-cover.strip.L-quote .q4{bottom:36%;}',
     '%P% .mk-cover.strip.L-tate .ft{left:24%;}',
     '%P% .mk-cover.strip.L-kw .xk1{top:1%;right:-5%;}',
     '%P% .mk-cover.strip.L-tate .xw2,%P% .mk-cover.strip.L-wave .xw5,%P% .mk-cover.strip.t4.L-mark .xw7{bottom:37%;}',
     '%P% .mk-cover.strip.L-quote .xk3{bottom:37%;}%P% .mk-cover.strip.t3.L-quote .q2{bottom:36%;}',
-    '%P% .mk-cover.mini{flex:none;width:58px;--u:1.6cqw;aspect-ratio:auto;min-height:78px;padding:16% 7% 10%;border-radius:4px;}',
+    '%P% .mk-cover.mini{flex:none;width:58px;--u:1.6cqw;aspect-ratio:auto;min-height:78px;padding:54px 24px 34px;border-radius:4px;}',   // 同上，钉成手机上的像素值
     '%P% .mk-cover.mini .ft,%P% .mk-cover.mini .tg,%P% .mk-cover.mini .ca,%P% .mk-cover.mini .tm,%P% .mk-cover.mini .rec,%P% .mk-cover.mini em.mo{display:none;}',
     '%P% .mk-cover.mini .ct{font-size:max(9px,calc(var(--u)*9))!important;-webkit-line-clamp:3;}',
     '%P% .mk-cover.mini .kw{display:none;}',
