@@ -7325,7 +7325,7 @@ var PIANCHANG_ONLINE = (function () {
       '<div class="lbl">模型名</div><input type="text" id="pc-llm-model" list="pc-llm-list" autocomplete="off" placeholder="比如 deepseek-chat / gemini-2.5-flash" value="' + esc(fv(form, 'model', c.model || '')) + '">' +
       '<datalist id="pc-llm-list">' + (UI.llmModels || []).map(function (x) { return '<option value="' + esc(x) + '">'; }).join('') + '</datalist>' +
       '<div class="test"><button class="btn sm" data-act="llm-models">拉模型列表</button>' + (UI.llmModels && UI.llmModels.length ? '<span class="faint">拉到 ' + UI.llmModels.length + ' 个，点模型名那一格挑</span>' : '') + '</div></div>';
-    h += '<div class="test"><button class="btn sm" data-act="llm-test">测试一下</button><span class="res" id="pc-llm-r"></span></div></div>';
+    h += '<div class="test"><button class="btn sm" data-act="llm-test">测试一下</button><button class="btn sm pri" data-act="set-save" data-llm="1">保存</button><span class="res" id="pc-llm-r"></span></div>' + (m.lerr ? '<div class="err" id="pc-llm-err">' + esc(m.lerr) + '</div>' : '') + '</div>';
     // 配音
     h += '<div class="sec"><h4>配音</h4><select id="pc-tts-be">' + opts([['fish', 'Fish'], ['minimax', 'MiniMax']], be) + '</select>';
     if (be === 'fish') h += '<div class="lbl">Fish API Key</div><input type="password" id="pc-fish-key" autocomplete="off" placeholder="' + (lsGet(FISH_KEY) ? '已保存（留空不改）' : '贴 Fish API Key') + '" value="' + esc(fv(form, 'fishKey', '')) + '">' +
@@ -7365,9 +7365,19 @@ var PIANCHANG_ONLINE = (function () {
     var c = llmSet(), set = ttsSet();
     var lf = { mode: f0.mode === 'own' ? 'own' : 'main', source: llmSource(f0.source != null ? f0.source : c.source), url: f0.url != null ? f0.url : (c.url || ''), model: f0.model != null ? f0.model : (c.model || ''), key: f0.key || '' };
     var lerr = llmFormErr(lf, lf.key || lsGet(LLM_KEY));
-    if (lerr) { UI.modal.form = f0; UI.modal.err = lerr; render(); return; }   // 模型那一节没填全：什么都先不存
-    lsSet(LLM_CFG, JSON.stringify({ mode: lf.mode, source: lf.source, url: lf.url, model: lf.model }));
+    if (lerr) {   // 模型那一节没填全：什么都先不存。报错放在那一节底下，再弹一条、滚过去（v0.1.16：原来只写在最底下，看不见，以为存上了）
+      UI.modal.form = f0; UI.modal.err = UI.modal.lerr = lerr; render();
+      toast('warning', '没存上：' + lerr);
+      var le = PANEL.querySelector('#pc-llm-err'); if (le && le.scrollIntoView) le.scrollIntoView({ block: 'center' });
+      return;
+    }
+    var lj = JSON.stringify({ mode: lf.mode, source: lf.source, url: lf.url, model: lf.model });
+    lsSet(LLM_CFG, lj);
     if (lf.key) lsSet(LLM_KEY, lf.key);
+    if (lsGet(LLM_CFG) !== lj || (lf.key && lsGet(LLM_KEY) !== lf.key)) {
+      var we = '浏览器不让存（可能是无痕模式，或者酒馆的本地存储满了）：设置没存上，关掉还是原来的';
+      UI.modal.form = f0; UI.modal.err = UI.modal.lerr = we; render(); toast('error', we); return;
+    }
     var next = Object.assign({}, set);
     next.backend = f0.be === 'minimax' ? 'minimax' : 'fish';
     if (f0.fishModel != null) next.fishModel = f0.fishModel || 's2.1-pro-free';
@@ -7384,6 +7394,20 @@ var PIANCHANG_ONLINE = (function () {
     applyUserPrompt(); applyShoot(); applyTalent();   // 马上换掉正挂着的那几条
     UI.modal = null; UI.llmModels = null; render();
     toast('success', '设置存好了' + (llmApi() ? '：片场改用 ' + llmApi().source + ' · ' + llmApi().model : ''));
+  }
+  // 模型那一节和存着的不一样（选了单独 API 还没存、换了模型、填了新 Key）
+  function llmDirty() {
+    var f0 = readForm(); if (!f0) return false;
+    var c = llmSet(), mode = f0.mode === 'own' ? 'own' : 'main';
+    if (mode !== (c.mode === 'own' ? 'own' : 'main')) return true;
+    if (mode !== 'own') return false;
+    return !!f0.key || llmSource(f0.source) !== llmSource(c.source) || (f0.url || '') !== (c.url || '') || (f0.model || '') !== (c.model || '');
+  }
+  // 关设置页：模型那一节改了没存，先拦一次（再点一次就真关）
+  function closeSettings() {
+    var m = UI.modal;
+    if (m && m.kind === 'settings' && !m.warned && llmDirty()) { setFormKeep(); m.warned = true; toast('warning', '片场用的模型改了还没存：点「保存」；不要了就再关一次'); return; }
+    UI.modal = null; render();
   }
   function clearKeys() {
     var hadLlm = !!lsGet(LLM_KEY);
@@ -7407,7 +7431,7 @@ var PIANCHANG_ONLINE = (function () {
         ordered_prompts: [{ role: 'system', content: '这是一次连通测试，照用户说的回。' }], generation_id: 'pianchang-llmtest-' + Date.now().toString(36) }, api))) || '').trim();
       var sec = ((Date.now() - t0) / 1000).toFixed(1) + ' 秒', who = api ? api.source + ' / ' + api.model : '正文那条连接';
       if (!r) show('bad', '连上了，可回来的是空的（' + who + '，' + sec + '）：可能是这句被拦了，或者回复长度设得太小。');
-      else show('good', '通了（' + who + '，' + sec + '）：「' + clip(r, 40) + '」');
+      else show('good', '通了（' + who + '，' + sec + '）：「' + clip(r, 40) + '」' + (llmDirty() ? '。还没存：点旁边的「保存」才生效' : ''));
     } catch (e) { show('bad', '没通：' + hideKey(errMsg(e), key)); }
   }
   // 拉模型列表：OpenAI 兼容的问 /models；Claude、Gemini 各有各的问法。有的服务商不让浏览器直接问，拉不到就手动填
@@ -9233,7 +9257,7 @@ var PIANCHANG_ONLINE = (function () {
     fabRefresh(st);
     applyTheme();
     if (UI.modal && UI.modal.kind === 'settings') setFormKeep();   // 设置页填了一半：后台重画别把字丢了
-    if (!id) { PANEL.setAttribute('data-pc-tab', 'noid'); PANEL.removeAttribute('data-pc-identity'); PANEL.innerHTML = renderHead(st) + renderNoId() + renderModal(st) + themePop(); panelRendered('noid', ''); return; }
+    if (!id) { var dlg0 = PANEL.querySelector('.pc-dialog'), ds0 = dlg0 ? dlg0.scrollTop : 0; PANEL.setAttribute('data-pc-tab', 'noid'); PANEL.removeAttribute('data-pc-identity'); PANEL.innerHTML = renderHead(st) + renderNoId() + renderModal(st) + themePop(); var dn0 = PANEL.querySelector('.pc-dialog'); if (dn0 && dlg0) dn0.scrollTop = ds0; panelRendered('noid', ''); return; }
     // 当前页签记在 data-cur 上，不能叫 data-tab：点击委托认 [data-tab]，面板自己带着它，点哪儿都会被当成「切页签」（0.1.4 修）
     var t = curTab(st), main = PANEL.querySelector('.pc-main'), scroll = main ? main.scrollTop : 0, sameTab = PANEL.getAttribute('data-cur') === t;
     var dlg = PANEL.querySelector('.pc-dialog'), dScroll = dlg ? dlg.scrollTop : 0;
@@ -9421,7 +9445,7 @@ var PIANCHANG_ONLINE = (function () {
     if (t.hasAttribute('data-day')) { UI.calSel = Number(t.getAttribute('data-day')) || null; render(); return; }
     var act = t.getAttribute('data-act'), id = t.getAttribute('data-id');
     if (UI.thOpen && act !== 'theme-set') { UI.thOpen = false; if (act === 'theme-close' || act === 'theme-open') { render(); return; } }
-    if (act === 'modal-bg') { if (e.target === t && UI.modal && UI.modal.kind !== 'finish') { UI.modal = null; render(); } return; }
+    if (act === 'modal-bg') { if (e.target === t && UI.modal && UI.modal.kind !== 'finish') closeSettings(); return; }
     if (act && act.indexOf('face-') === 0) { faceClick(act, t, e); return; }   // 换头像 / 立绘那一层
     var st = readState();
     switch (act) {
@@ -9454,7 +9478,7 @@ var PIANCHANG_ONLINE = (function () {
       case 'scf': C.scFilterClick(UI.scf, t.getAttribute('data-f'), t.getAttribute('data-v') || ''); render(); break;
       case 'scene-clear': clearScene().then(render); break;
       case 'tips-ok': lsSet('pianchang_tips_' + identity(st), '1'); render(); break;
-      case 'modal-x': UI.modal = null; render(); break;
+      case 'modal-x': closeSettings(); break;
       case 'ledger': UI.modal = { kind: 'ledger' }; render(); break;
       case 'cal-prev': UI.calOff--; render(); break;
       case 'cal-next': UI.calOff++; render(); break;
