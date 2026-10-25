@@ -1820,19 +1820,22 @@ var PIANCHANG_PROFILE = (function () {
   }
 
   // ═════════════ 现算的几样 ═════════════
+  // 经期 3 天，只当氛围（v0.1.23 Fan：「生理期改成三天…只作为额外的气氛玩法但不影响做。不要一直强调生理期」）
+  // 之前 5 天 + 每轮注入「经期第几天（量多）」+ 开机提醒，模型当成禁令，连拍三部都借位
+  var PERIOD_DAYS = 3;
   function cycleOf(p, day) {
     var b = p && p.body; if (!b || !b.cy) return { d: 0, len: 0, phase: '', label: '' };
     var len = Number(b.cy[0]) || 28, d = mod((Number(day) || 1) - (Number(b.at) || 1) + (Number(b.cy[1]) || 0), len) + 1, ov = len - 14;
-    var phase = d <= 5 ? '经期' : d < ov ? '卵泡期' : d <= ov + 1 ? '排卵期' : '黄体期';
+    var phase = d <= PERIOD_DAYS ? '经期' : d < ov ? '卵泡期' : d <= ov + 1 ? '排卵期' : '黄体期';
     var label = phase === '经期' ? '经期第 ' + d + ' 天' : phase + '，周期第 ' + d + ' 天';
     var toNext = len - d + 1;
-    return { d: d, len: len, ov: ov, phase: phase, label: label, flow: b.cy[2] || '中', inPeriod: d <= 5, nextIn: toNext, nextDay: (Number(day) || 1) + (d <= 5 ? 0 : toNext) };
+    return { d: d, len: len, ov: ov, phase: phase, label: label, flow: b.cy[2] || '中', inPeriod: d <= PERIOD_DAYS, nextIn: toNext, nextDay: (Number(day) || 1) + (d <= PERIOD_DAYS ? 0 : toNext) };
   }
-  // 经期开机拍 R18：只提示，不拦（主脚本在开机检查里放进 warn）
-  function periodWarn(p, day, tier) {
-    var c = cycleOf(p, day);
-    if (!c.inPeriod || tierIdx(tier) < 2) return '';
-    return (p.stageName || '她') + '今天' + c.label + '（量' + c.flow + '）。照样能拍，正文会照这个写';
+  // 正文注入用：经期那几天给一个小样子（同一次来的几天抽到的一样），提一句就够，戏和床上照常；不在经期就不提周期
+  var PERIOD_MOOD = ['怕凉，手里一直捧着热水', '腰有点酸，坐下前先揉两下', '比平时黏人', '脾气有点冲，哄两句就好', '嘴馋，想吃甜的', '小腹贴了个暖宝宝', '身上比平时敏感，反而更想要'];
+  function periodNote(p, day) {
+    var c = cycleOf(p, day); if (!c.inPeriod) return '';
+    return '生理期第 ' + c.d + ' 天，' + rpick(rngOf((p.id || p.stageName || '') + ':' + ((Number(day) || 0) - c.d)), PERIOD_MOOD) + '（氛围，整场提一句就够；戏和床上照常）';
   }
   // 日历：from…to 之间她在经期的那几天
   function periodDays(p, from, to) {
@@ -1973,8 +1976,8 @@ var PIANCHANG_PROFILE = (function () {
   // 她在场才发。每人最多六行；固定项只写文字，颜色只给界面看。
   // low（v0.1.9 NSFW 低档：模型在输入端就拦的时候）：只发身高、体型、罩杯，加一句委婉的「今天」；私密几项、经验、初体验、描写都不发。档案页不受影响
   function softToday(p, day) {
-    var cyc = cycleOf(p, day), x = p.sex || {}, u = Number(x.u) || 0, n = u ? (Number(day) || 0) - u : -1, hv = Number(x.uh) || 0, out = [];
-    if (cyc.inPeriod) out.push('生理期第 ' + cyc.d + ' 天');
+    var x = p.sex || {}, u = Number(x.u) || 0, n = u ? (Number(day) || 0) - u : -1, hv = Number(x.uh) || 0, out = [], pn = periodNote(p, day);
+    if (pn) out.push(pn);
     if (n === 0) out.push('今天刚拍完一场，身子还没缓过来');
     else if (n > 0 && n <= 1 + hv) out.push('前两天刚拍过，身上还有点累');
     else if (n > 0 && n <= 3 + hv) out.push('前几天拍过，基本缓过来了');
@@ -1988,15 +1991,16 @@ var PIANCHANG_PROFILE = (function () {
       if (t0.length) out.push('- 今天：' + t0.join('；'));
       return out;
     }
-    var cyc = cycleOf(p, day), vn = vulvaNow(p, day), an = anusNow(p, day), pb = pubicNow(p, day);
+    var vn = vulvaNow(p, day), an = anusNow(p, day), pb = pubicNow(p, day);
     var lines = [];
     lines.push('【她现在】' + nm + '（' + (p.realName || '') + '，' + (p.age || '') + '）：' + b.h + '，' + b.bd + '；' + b.cup + ' 杯，' + b.bs.split('，')[0] + '，乳晕' + b.ar + '、' + b.nc +
       '；私处' + b.vs.split('，')[0] + '、' + b.vc + '，' + rankOf(b.rk).note + '；阴毛' + pb.t + '；后面' + an.lvl);
-    var today = [cyc.label + (cyc.inPeriod ? '（量' + cyc.flow + '）' : '')];
+    var today = [], pn = periodNote(p, day);
+    if (pn) today.push(pn);
     if (vn.sw || /酸/.test(vn.t)) today.push(vn.t);
     if (an.now) today.push('后面' + an.now);
     if (pb.sub) today.push(pb.sub);
-    lines.push('- 今天：' + today.join('；'));
+    if (today.length) lines.push('- 今天：' + today.join('；'));
     var after = arr(x.ps).map(function (n) { return n === SELF_NAME ? SELF_NAME : n; });
     lines.push('- 经验：交往过 ' + (b.dt || 0) + ' 个；性经验 ' + partnerCount(p) + ' 人' + (after.length ? '（入行后：' + after.slice(-4).join('、') + (after.length > 4 ? '等' : '') + '）' : '') +
       '；处女膜' + (b.hy ? '完整' : '已破') + '；初体验：' + firstText(p));
@@ -2095,7 +2099,7 @@ var PIANCHANG_PROFILE = (function () {
   }
   function cycleBar(c) {
     var h = '<span class="pcp-cyc" aria-hidden="true">';
-    for (var d = 1; d <= c.len; d++) h += '<i class="' + (d <= 5 ? 'm' : d >= c.ov && d <= c.ov + 1 ? 'o' : d < c.ov ? 'f' : 'l') + (d === c.d ? ' now' : '') + '"></i>';
+    for (var d = 1; d <= c.len; d++) h += '<i class="' + (d <= PERIOD_DAYS ? 'm' : d >= c.ov && d <= c.ov + 1 ? 'o' : d < c.ov ? 'f' : 'l') + (d === c.d ? ' now' : '') + '"></i>';
     return h + '</span>';
   }
   function devBar(n) { var h = '<span class="pcp-dev" aria-hidden="true">'; for (var i = 1; i <= 6; i++) h += '<i class="' + (i <= n ? 'on' : '') + '"></i>'; return h + '</span>'; }
@@ -2145,7 +2149,7 @@ var PIANCHANG_PROFILE = (function () {
     ].join('');
     var cyc = [
       row('今天', '<span class="pcp-c' + (c.inPeriod ? ' pcp-t-l6' : '') + '">' + esc(c.label) + '</span>'), row(c.len + ' 天一轮', cycleBar(c), 'bar'),
-      row('经量', esc(c.flow)), row(c.inPeriod ? '这次到' : '下次经期', esc(c.inPeriod ? md(day + 5 - c.d) : md(c.nextDay) + '（' + c.nextIn + ' 天后）')),
+      row('经量', esc(c.flow)), row(c.inPeriod ? '这次到' : '下次经期', esc(c.inPeriod ? md(day + PERIOD_DAYS - c.d) : md(c.nextDay) + '（' + c.nextIn + ' 天后）')),
     ].join('');
     var x = p.sex || {}, after = arr(x.ps).map(showName);
     var exp = [
@@ -2458,7 +2462,7 @@ var PIANCHANG_PROFILE = (function () {
   var API = {
     VERSION: VERSION, SKIN: SKIN, RANKS: RANKS,
     ensure: ensure, onSign: onSign, onWrap: onWrap, examSheet: examSheet, examined: examined,
-    cycleOf: cycleOf, periodWarn: periodWarn, periodDays: periodDays, vulvaNow: vulvaNow, anusNow: anusNow, pubicNow: pubicNow, partnerCount: partnerCount,
+    cycleOf: cycleOf, periodDays: periodDays, vulvaNow: vulvaNow, anusNow: anusNow, pubicNow: pubicNow, partnerCount: partnerCount,
     injectLines: injectLines, injectBlock: injectBlock, present: present,
     colorOf: colorOf, toneOf: toneOf, hairColorOf: hairColorOf, rankOf: rankOf, rankLabel: rankLabel,
     maleOf: maleOf, maleLine: maleLine, maleShort: maleShort,
@@ -6407,7 +6411,7 @@ var PIANCHANG_ONLINE = (function () {
   // ── 女优档案（profile.js / PIANCHANG_PROFILE，另一份文件，可以没有）。主脚本都走 pf(函数名, 参数…) 调它导出的函数（接口见 profile.js 文件头）；
   //   没加载 / 没有那个函数 / 出错，就当没这回事（返回 undefined，主流程照走）。接了这几处：
   //   读档 normState → ensure（老存档补 body / sex，按 id 定，每次一样）；签约 signCand → onSign（体检表进签约提示）；
-  //   杀青 shootWrap → onWrap（回写性经验、初体验、出道作）；开机检查 dirCheck → periodWarn；
+  //   杀青 shootWrap → onWrap（回写性经验、初体验、出道作）；经期只在正文注入里点一句氛围（v0.1.23 起开机不提醒）；
   //   注入：pianchang-talent（深度 1，不扫世界书）→ present + injectBlock；正在拍的那部并进 pianchang-shoot（injectLines / maleLine）；
   //   卡司页「档案」→ UI.profile → 面板末尾 .pc-pfhost 里 mount；日历 periodDays；卸载 destroy；二创接口 getProfile。
   var PF = G.PIANCHANG_PROFILE || (typeof PIANCHANG_PROFILE !== 'undefined' ? PIANCHANG_PROFILE : null);
@@ -7992,7 +7996,6 @@ var PIANCHANG_ONLINE = (function () {
         var left = C.daysToShoot(c, st.day); if (left > 0) why.push(who + ' 今天才签的约，' + C.mdShort(C.canShootDay(c)) + ' 起才能进棚');
         cost += Number(c.fee) || 0;
         if ((c.ng || []).length) warn.push(who + ' 的 NG：' + c.ng.join('；'));
-        var pw = pf('periodWarn', c, st.day, sc.tier); if (pw) warn.push(pw);   // 女优档案：经期拍 R18 只提示，不拦
       } else {
         var a = L.actors.find(function (x) { return x.name === who; }); if (!a) { why.push(who + ' 不是男优'); return; }
         cost += a.fee;
