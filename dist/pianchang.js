@@ -3044,6 +3044,7 @@ var PIANCHANG_COVER = (function () {
 //  配音：照声色事务所的 Fish 接法（官网 /compat/v1/audio/speech 直连）。主脚本 C.ttsReady() 为真就交给主脚本念；不然用叮叮自己 ⚙ 里填的 Fish Key
 //    （没填就借声色事务所 / 一掷千金存过的那把）。都没有：语音条照显示文字、通话照打，只是不出声，点一下给一句说明，不报错。
 //  跟正文的线：① 写进正文：对方回完，这段对话用 ```chat 围栏写进最后一楼，观察器渲染成气泡，水位线 s.dd.f 防重写
+//    （「对话气泡美化」开着画成叮叮聊天窗，跟手机里同一套样子；关了是简版气泡）
 //    ② 静默回灌：injectPrompts（带「仅当事人知晓」框，should_scan），先 uninject 再 inject，每次正文生成前刷新。①② 各一个开关，默认都开
 //    ③ 正文反过来叫手机：正文末尾的 <!--叮叮 名字：消息--> 注释块落成真消息；主线每出一条新回复按概率让在场的人来消息（防刷屏）；
 //      主脚本在月榜 / 抽查下架 / NG / 有人受委屈时调 DD.notifyEvent(kind, payload)
@@ -3175,7 +3176,7 @@ var PIANCHANG_DD = (function () {
   //   pianchang_dd_cfg   { apiurl, key, model, source, floor, inject, auto, fishModel, speed }
   //   pianchang_fish_key Fish 语音的 Key（没填 → 借声色事务所 shacho_fish_key → 借一掷千金 / 纸醉金迷 sbnyc_tts_cfg 里的 Fish）
   var CFG_KEY = 'pianchang_dd_cfg', FISH_KEY = 'pianchang_fish_key';
-  var CFG_DEF = { apiurl: '', key: '', model: '', source: 'openai', floor: true, inject: true, auto: true, fishModel: 's2.1-pro-free', speed: 0.8 };
+  var CFG_DEF = { apiurl: '', key: '', model: '', source: 'openai', floor: true, pretty: true, inject: true, auto: true, fishModel: 's2.1-pro-free', speed: 0.8 };
   var SOURCES = [['openai', 'OpenAI 兼容'], ['claude', 'Claude'], ['makersuite', 'Gemini'], ['deepseek', 'DeepSeek'], ['openrouter', 'OpenRouter'], ['custom', '自定义']];
   var FISH_MODELS = [['s2.1-pro-free', 's2.1-pro-free（免费到 11 月底）'], ['s2-pro', 's2-pro（付费）'], ['s1', 's1（付费）']];
   function store() { try { return (DOC && DOC.defaultView && DOC.defaultView.localStorage) || localStorage; } catch (e) { try { return localStorage; } catch (e2) { return null; } } }
@@ -3657,16 +3658,73 @@ var PIANCHANG_DD = (function () {
     });
     return wrap;
   }
+  // 美化版（10-25 Fan：「叮叮插入正文那里加一个对话气泡美化开关，美化过的像软件里面一样，参考我们写过的，不要重新造轮子」）：
+  //   每段画成一个叮叮聊天窗：顶栏照 renderChat，气泡直接调 msgHtml（只读），CSS 是手机那套换了作用域（FLOOR_CSS 末尾），配色跟片场面板当前那套走（floorTheme）。
+  //   围栏里只有「名字: 内容」：转账 / 语音 / 表情包按 fenceRows 写进去的样子认回来，认不出就当普通一句话
+  var TITLE_RE = /^(.*?)\s*·\s*(?:叮叮|盯盯)\s*·\s*(?:群「(.+)」|与 (.+) 的私聊)\s*(（更早的从略）)?\s*$/;
+  function rowMsg(row, isMe) {
+    var t = String(row.text || ''), m = { sender: isMe ? 'user' : 'npc', senderName: isMe ? '' : row.who, text: t }, x;
+    if ((x = t.match(/^［表情包：(.+?)］$|^\[表情包：(.+?)\]$/))) { var nm = resolveSticker(x[1] || x[2]); if (nm) m.text = '<bqb>' + nm + '</bqb>'; }
+    else if ((x = t.match(/^［语音 (\d+)″］([\s\S]*)$/))) { m.kind = 'voice'; m.secs = Number(x[1]) || 1; m.text = x[2]; }
+    else if ((x = t.match(/^［转账 (-?¥[\d,]+)(?:，留言：([\s\S]*?))?（(已收款|对方还没收)）］$/))) { m.kind = 'transfer'; m.amount = Number(x[1].replace(/[^\d-]/g, '')) || 0; m.note = x[2] || ''; m.opened = x[3] === '已收款'; }
+    return m;
+  }
+  function buildApp(gs) {
+    var s = st(), me = shownUser(s), out = DOC.createElement('div'), wins = []; out.className = 'pcdd-apps';
+    gs.forEach(function (g) {
+      var t = String(g.title || '').match(TITLE_RE), c, head, sub, key = t ? (t[3] ? 'p:' + t[3] : 'g:' + t[2]) : '', last = wins[wins.length - 1], h;
+      if (t && t[3]) c = contactByName(t[3], s) || { id: '', name: t[3] };
+      else c = Object.assign({ group: true, members: [] }, (t && groups(s).find(function (x) { return x.name === t[2]; })) || { name: t ? t[2] : APP });
+      head = !t ? '<div class="dd-logo">叮</div>' : c.group ? '<div class="dd-av sm t" style="background:var(--dd)">' + esc(c.icon || '群') + '</div>' : avatarOf(c).replace('dd-av', 'dd-av sm');
+      sub = !t ? (g.title || '') : APP + ' · ' + (c.group ? (c.members.length ? (c.members.length + 1) + ' 人' : '群聊') : (c.sub || '私聊'));
+      if (key && last && last.key === key) h = t[1] ? '<div class="dd-day">' + esc(t[1]) + '</div>' : '';   // 同一个会话接着写的下一轮：并进上一个窗，中间一条时间
+      else h = '<div class="dd-top">' + head + '<div class="dd-tt">' + esc(c.name) + '<small>' + esc(sub) + '</small></div>' + (t && t[1] ? '<span class="dd-clock">' + esc(t[1]) + '</span>' : '') + '</div><div class="dd-chat">';
+      if (t && t[4]) h += '<div class="dd-sys"><span>更早的消息从略</span></div>';
+      var prev = null;
+      g.rows.forEach(function (row) {
+        if (row.sys) { var ic = /^视频通话 · /.test(row.text) ? '📹 ' : /^语音通话 · /.test(row.text) ? '📞 ' : ''; h += '<div class="dd-sys"><span>' + esc(ic + row.text) + '</span></div>'; prev = null; return; }
+        var isMe = row.who === me || row.who === uc(s) || row.who === 'User' || row.who === '我';
+        h += msgHtml(rowMsg(row, isMe), c, s, prev, true);
+        prev = isMe ? '#me' : row.who;
+      });
+      if (key && last && last.key === key) last.h += h; else wins.push({ key: key, h: h });
+    });
+    wins.forEach(function (w) { var win = DOC.createElement('div'); win.className = 'pcdd-app'; win.innerHTML = w.h + '</div>'; out.appendChild(win); });
+    return out;
+  }
+  // 美化版的配色：读片场面板现在那套的颜色变量，写进一张小样式表（主脚本换配色时也调一次）
+  var THEME_VARS = ['--pc-paper', '--pc-card', '--pc-card2', '--pc-ink', '--pc-sub', '--pc-faint', '--pc-line', '--pc-input', '--pc-amber'];
+  function floorTheme() {
+    if (!DOC || !C || !C.themeHost) return;
+    try {
+      var host = C.themeHost(); if (!host) return;
+      var cs = DOC.defaultView.getComputedStyle(host), decl = THEME_VARS.map(function (k) { var v = String(cs.getPropertyValue(k) || '').trim(); return v ? k + ':' + v : ''; }).filter(Boolean).join(';');
+      if (!decl) return;
+      var el = DOC.getElementById(NS + '-floor-theme'); if (!el) { el = DOC.createElement('style'); el.id = NS + '-floor-theme'; DOC.head.appendChild(el); }
+      var css = '.pcdd-apps .pcdd-app{' + decl + '}'; if (el.textContent !== css) el.textContent = css;
+    } catch (e) {}
+  }
+  function floorView(txt, gs) { var el = cfg().pretty !== false ? buildApp(gs) : buildBubs(gs); el.__pcddSrc = txt; return el; }
+  // 开关拨了：已经画好的就地换样子（原文挂在节点上）
+  function restyleFloor() {
+    if (!DOC) return;
+    try {
+      if (cfg().pretty !== false) floorTheme();
+      var done = (DOC.getElementById('chat') || DOC).querySelectorAll('.pcdd-apps, .pcdd-bubs');
+      for (var i = 0; i < done.length; i++) { var el = done[i], src = el.__pcddSrc, gs = src ? parseBubs(src) : null; if (gs && el.parentNode) el.parentNode.replaceChild(floorView(src, gs), el); }
+    } catch (e) { try { console.warn('[叮叮] 正文气泡换样子失败', e); } catch (e2) {} }
+  }
   function renderFloorBubbles() {
     if (!DOC) return;
     try {
-      var root = DOC.getElementById('chat') || DOC, codes = root.querySelectorAll('pre > code');
+      var root = DOC.getElementById('chat') || DOC, codes = root.querySelectorAll('pre > code'), themed = false;
       for (var i = 0; i < codes.length; i++) {
         var codeEl = codes[i], pre = codeEl.parentNode; if (!pre || !pre.parentNode) continue;
         var cls = String(codeEl.className || ''), txt = codeEl.textContent || '';
         if (!/(^|\s|-)chat(\s|$)/.test(cls) && !/^\s*#.*·\s*(叮叮|盯盯)\s*·/.test(txt)) continue;
         var groups = parseBubs(txt); if (!groups) continue;
-        pre.parentNode.replaceChild(buildBubs(groups), pre);
+        if (!themed) { themed = true; if (cfg().pretty !== false) floorTheme(); }
+        pre.parentNode.replaceChild(floorView(txt, groups), pre);
       }
     } catch (e) { try { console.warn('[叮叮] 正文气泡渲染异常', e); } catch (e2) {} }
   }
@@ -3720,7 +3778,7 @@ var PIANCHANG_DD = (function () {
 
   // ══ §9 样式（钉钉那种工作软件：圆角卡片；主色换成钨丝灯琥珀，琥珀底上的字用深色；纸、墨、线跟主面板的 --pc-* 日夜主题走）══
   var R = '#' + NS + '-root';
-  var CSS = [
+  var CSS_RULES = [
     R + '{position:absolute;inset:0;display:flex;flex-direction:column;min-height:0;background:var(--pc-paper);color:var(--pc-ink);--dd:#d9a441;--dd-soft:rgba(217,164,65,.16);--dd-on:#2b1e0e;--dd-tx:#a8741a;font-size:14px;overflow:hidden;}',
     R + ' *{box-sizing:border-box;}',
     R + ' .dd-top{flex:none;display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--pc-line);background:var(--pc-card);}',
@@ -3858,7 +3916,8 @@ var PIANCHANG_DD = (function () {
     R + ' .dd-sw.on{background:var(--dd);}', R + ' .dd-sw.on::after{left:21px;}',
     R + ' .dd-note{font-size:11.5px;color:var(--pc-faint);line-height:1.6;margin:4px 0;}',
     R + ' .dd-step{display:inline-flex;align-items:center;gap:8px;}', R + ' .dd-step b{min-width:40px;text-align:center;font-variant-numeric:tabular-nums;}',
-  ].join('\n');
+  ];
+  var CSS = CSS_RULES.join('\n');
   // 正文里的折叠块（玩家看得见，主线发请求前剥掉）
   var FLOOR_CSS = [
     '#chat details[data-pcddlog]{margin:12px 0 4px;border:1px solid rgba(217,164,65,.45);border-left:3px solid #d9a441;border-radius:8px;padding:6px 10px;background:rgba(217,164,65,.08);font-size:.92em;}',
@@ -3877,7 +3936,19 @@ var PIANCHANG_DD = (function () {
     '.pcdd-bubs .br.me .bb{border-top-left-radius:12px;border-top-right-radius:4px;background:#d9a441;color:#2b1e0e;}',
     '.pcdd-bubs .bb.stk{background:transparent!important;padding:2px;}', '.pcdd-bubs .bb.stk img{max-width:96px;max-height:96px;border-radius:8px;display:block;}',
     '.pcdd-bubs .bs{text-align:center;font-size:11px;color:#a89c8e;margin:6px 0;}',
-  ].join('\n');
+  ].concat(
+    // 美化版（「对话气泡美化」开关）：手机里那一套规则换个作用域照用（#pcdd-root → .pcdd-app），下面只补贴进正文要改的几处。
+    //   配色默认是片场面板的底子（炭黑琥珀），floorTheme() 再按面板当前那套盖一层
+    CSS_RULES.map(function (r) { return r.split(R).join('.pcdd-app'); }), [
+    '.pcdd-app{--pc-paper:#161412;--pc-card:#201d1a;--pc-card2:#28241f;--pc-ink:#efe6d6;--pc-sub:#bcae98;--pc-faint:#8a7f6e;--pc-line:#36312a;--pc-input:#121110;--pc-amber:#e2a648;}',
+    '.pcdd-app{position:relative;inset:auto;max-width:440px;margin:14px auto 6px;border:1px solid var(--pc-line);border-radius:16px;box-shadow:0 6px 22px rgba(0,0,0,.28);line-height:1.5;text-align:left;font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC","Source Han Sans SC",system-ui,sans-serif;}',
+    '.pcdd-app .dd-top{padding:10px 14px;}',
+    '.pcdd-app .dd-tt{flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--pc-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.pcdd-app .dd-tt small{display:block;font-size:11px;font-weight:400;color:var(--pc-faint);}',
+    '.pcdd-app .dd-chat{flex:none;overflow:visible;padding:12px 12px 14px;}',
+    '.pcdd-app .dd-bub,.pcdd-app .dd-msg.me .dd-bub{cursor:default;}',
+    '.pcdd-app .dd-vct{display:block;}', '.pcdd-app .dd-mt:empty{display:none;}',
+  ]).join('\n');
 
   var ICO = {
     call: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l1.5 4-2.2 1.6a13 13 0 0 0 6.1 6.1L16 13.5l4 1.5v4a1.6 1.6 0 0 1-1.8 1.6C10.4 19.9 4.1 13.6 3.4 5.8A1.6 1.6 0 0 1 5 4z"/></svg>',
@@ -4033,7 +4104,7 @@ var PIANCHANG_DD = (function () {
     }).join('');
     area.scrollTop = area.scrollHeight;
   }
-  function msgHtml(m, c, s, prevWho) {
+  function msgHtml(m, c, s, prevWho, ro) {   // ro：只读（正文里的美化版）：不挂点击，不写「点一下」
     var me = m.sender === 'user';
     if (m.kind === 'claim') return '<div class="dd-sys"><span>' + esc(me ? '你收了' + (m.senderName || '对方') + '的转账' : (m.senderName || '对方') + '收了你的转账') + '</span></div>';
     if (m.kind === 'recall') return '<div class="dd-sys"><span>' + esc(me ? '你' : (m.senderName || '对方')) + '撤回了一条消息</span></div>';
@@ -4048,16 +4119,17 @@ var PIANCHANG_DD = (function () {
     var inner, bqb = String(m.text || '').match(/^<bqb>(.*?)<\/bqb>$/), extra = '';
     if (m.kind === 'transfer') {
       inner = '<div class="dd-bub tf' + (m.opened ? ' opened' : '') + '" data-x="' + (me ? '' : 'claim') + '" data-id="' + esc(m.id) + '"><div class="tt"><span class="ti">💰</span><div><div class="ta">' + esc(money(m.amount)) + '</div><div class="tn">' + esc(m.note || '转账') + '</div></div></div>' +
-        '<div class="tb">' + (m.opened ? '已收款' : (me ? '等对方收款' : '点一下收款')) + '</div></div>';
+        '<div class="tb">' + (m.opened ? '已收款' : (me ? '等对方收款' : ro ? '待收款' : '点一下收款')) + '</div></div>';
     } else if (m.kind === 'voice') {
       var w = Math.min(200, 80 + (m.secs || 1) * 4), fid = !me && ttsOn() ? fishOf(pc) : '';
-      inner = '<div class="dd-bub vc" data-x="vc" data-id="' + esc(m.id) + '" style="width:' + w + 'px"><span>' + (fid ? '▶' : '🎤') + '</span><span class="w"><i></i><i></i><i></i><i></i><i></i></span><span>' + (m.secs || 1) + '″</span></div><div class="dd-vct">' + esc(m.text || '') + '</div>';
+      inner = '<div class="dd-bub vc" data-x="vc" data-id="' + esc(m.id) + '" style="width:' + w + 'px"><span>' + (fid && !ro ? '▶' : '🎤') + '</span><span class="w"><i></i><i></i><i></i><i></i><i></i></span><span>' + (m.secs || 1) + '″</span></div><div class="dd-vct">' + esc(m.text || '') + '</div>';
     } else if (m.kind === 'calllog') {
       inner = '<div class="dd-bub cl" data-x="review" data-id="' + esc(m.callId || '') + '">' + (m.mode === 'video' ? '📹' : '📞') + ' ' + esc(m.text || '') + '</div>';
     } else if (bqb && STICKERS[bqb[1]]) inner = '<div class="dd-bub stk">' + stickerImg(bqb[1]) + '</div>';
     else inner = '<div class="dd-bub"' + (me ? ' data-x="recall" data-id="' + esc(m.id) + '"' : '') + '>' + esc(bqbToText(m.text || '')) + '</div>';
     if (m.kind === 'invite') extra = inviteCard(m, s);
-    return '<div class="dd-msg' + (me ? ' me' : '') + '">' + av + '<div class="dd-mb">' + sn + inner + extra + '<div class="dd-mt">' + esc(m.time || '') + '</div></div></div>';
+    var out = '<div class="dd-msg' + (me ? ' me' : '') + '">' + av + '<div class="dd-mb">' + sn + inner + extra + '<div class="dd-mt">' + esc(m.time || '') + '</div></div></div>';
+    return ro ? out.replace(/ data-(?:x|id)="[^"]*"/g, '') : out;
   }
   function inviteCard(m, s) {
     var v = (s.invites || []).find(function (x) { return x && x.id === m.inv; });
@@ -4854,6 +4926,7 @@ var PIANCHANG_DD = (function () {
     ROOT.innerHTML = '<div class="dd-top"><button class="dd-ib" data-x="back" title="返回">' + ICO.back + '</button><h2>' + APP + '设置<small>存在这台设备的浏览器里，跟卡和聊天无关</small></h2></div><div class="dd-set">' +
       '<h3>跟正文的联动</h3>' +
       tog('floor', '写进正文', '对方回完，这段对话以气泡写进最新一楼（```chat 块）') +
+      tog('pretty', '对话气泡美化', '开：正文里那段画成跟' + APP + '里一样的聊天窗，顶栏、头像都在，配色跟片场面板走；关：简版气泡') +
       tog('inject', '回灌正文', '每次正文生成前，把' + APP + '记录悄悄告诉主线（只有当事人知道）') +
       tog('auto', '正文里的人主动来消息', '正文里出了事、在场的人会在' + APP + '上找你；月榜、下架、NG 也会有人来说') +
       '<h3>' + APP + '专用 API（可不填）</h3><div class="dd-note">不填就跟酒馆现在的连接走。填了以后，' + APP + '的消息、通话都走这里，不占主线的额度。</div>' +
@@ -4921,7 +4994,7 @@ var PIANCHANG_DD = (function () {
     else if (x === 'back') show('home');
     else if (x === 'face') { var fc = findChat(cur); if (fc && C.faceTap) C.faceTap(fc); }
     else if (x === 'set') show('set');
-    else if (x === 'set-tog') { var k = b.getAttribute('data-k'), o = {}; o[k] = cfg()[k] === false; saveCfg(o); renderSettings(); refreshInjection(); if (k === 'floor' && o[k]) startFloorObserver(); }
+    else if (x === 'set-tog') { var k = b.getAttribute('data-k'), o = {}; o[k] = cfg()[k] === false; saveCfg(o); renderSettings(); refreshInjection(); if (k === 'floor' && o[k]) startFloorObserver(); if (k === 'pretty') restyleFloor(); }
     else if (x === 'set-src') { saveCfg(Object.assign(readApiForm(), { source: b.getAttribute('data-v') })); renderSettings(); }
     else if (x === 'set-model') { saveCfg(Object.assign(readApiForm(), { model: b.getAttribute('data-v') })); renderSettings(); }
     else if (x === 'set-save') { saveCfg(readApiForm()); C.toast('success', APP + '的 API 设置存好了' + (cfg().apiurl ? '' : '（地址空着：跟酒馆当前连接走）')); renderSettings(); }
@@ -4988,7 +5061,7 @@ var PIANCHANG_DD = (function () {
     if (_bubTimer) { clearTimeout(_bubTimer); _bubTimer = null; }
     stopVoice();
     Object.keys(_urlCache).forEach(function (k) { try { ((DOC && DOC.defaultView && DOC.defaultView.URL) || URL).revokeObjectURL(_urlCache[k]); } catch (e) {} }); _urlCache = {}; _urlOrder = [];
-    ['-style', '-floor-style'].forEach(function (k) { var el = DOC && DOC.getElementById(NS + k); if (el) el.remove(); });
+    ['-style', '-floor-style', '-floor-theme'].forEach(function (k) { var el = DOC && DOC.getElementById(NS + k); if (el) el.remove(); });
     if (ROOT) { ROOT.remove(); ROOT = null; }
   }
   // 切聊天：回首页、关掉通话、停语音；观察器不在就补挂（切卡时 #chat 可能整个换掉）
@@ -5009,7 +5082,7 @@ var PIANCHANG_DD = (function () {
     init: init, attach: attach, cleanup: cleanup, onChatChanged: onChatChanged, refreshInjection: refreshInjection, refresh: refreshView,
     pushInvite: pushInvite, markOldInvites: markOldInvites, addContact: addContact, norm: norm, unread: unreadTotal,
     stripLog: stripLog, DDLOG_RE: DDLOG_RE, FENCE_RE: FENCE_RE, contacts: contacts, injText: injText,
-    notifyEvent: notifyEvent, onMainReceived: onMainReceived, os: { contacts: osContacts, contact: osContact, current: osCurrent, openByName: openByName }, gen: gen, apiCfg: customApi, ttsOn: ttsOn, speak: speak, stopVoice: stopVoice, renderFloorBubbles: renderFloorBubbles, APP: APP,
+    notifyEvent: notifyEvent, onMainReceived: onMainReceived, os: { contacts: osContacts, contact: osContact, current: osCurrent, openByName: openByName }, gen: gen, apiCfg: customApi, ttsOn: ttsOn, speak: speak, stopVoice: stopVoice, renderFloorBubbles: renderFloorBubbles, floorTheme: floorTheme, APP: APP,
     _t: { splitBatch: splitBatch, batchPrompt: batchPrompt, parsePrivate: parsePrivate, parseGroup: parseGroup, parseNpcLine: parseNpcLine, parseCallText: parseCallText, inviteChatId: inviteChatId, resolveSticker: resolveSticker, privatePrompt: privatePrompt, groupPrompt: groupPrompt, groups: groups, findChat: findChat, view: function () { return view; },
       fenceRows: fenceRows, splitTail: splitTail, parseBubs: parseBubs, floorScan: floorScan, maybeAmbient: maybeAmbient, washFloor: washFloor, ttsSegs: ttsSegs, fishOf: fishOf, cfg: cfg, saveCfg: saveCfg, phoneRule: phoneRule, AMB: AMB, onPromptReady: onPromptReady, flushN: function () { return _flushN; }, genCount: function () { return _genCount; } },
   };
@@ -8757,7 +8830,7 @@ var PIANCHANG_ONLINE = (function () {
   var THEME_DEFAULT = 'rose';
   function themeOf(id) { return THEMES.find(function (x) { return x[0] === id; }) || null; }
   function curTheme() { var v = lsGet(THEME_KEY); return themeOf(v) ? v : THEME_DEFAULT; }
-  function setTheme(id) { if (!themeOf(id)) return; lsSet(THEME_KEY, id); applyTheme(); }
+  function setTheme(id) { if (!themeOf(id)) return; lsSet(THEME_KEY, id); applyTheme(); try { if (DD && DD.floorTheme) DD.floorTheme(); } catch (e) {} }   // 正文里叮叮的美化聊天窗跟着换
   function applyTheme() {
     var t = curTheme();
     THEMES.forEach(function (x) { PANEL.classList.toggle('th-' + x[0], x[0] === t); });
@@ -10263,6 +10336,7 @@ var PIANCHANG_ONLINE = (function () {
         storyOnly: function (t) { return String(t || '').replace(TIME_RE, '\n'); },
         play: function () { return Promise.resolve(); }, ttsReady: function () { return false; }, voiceOf: function () { return ''; }, stopAudio: function () {},
         floorQ: function (fn) { _memoQ = _memoQ.then(fn, fn); return _memoQ; },
+        themeHost: function () { try { applyTheme(); } catch (e) {} return PANEL; },   // 正文里叮叮的美化聊天窗从面板上读当前配色
         isOpenTab: function () { return PANEL.classList.contains('open') && curTab(readState()) === 'dd'; }, badge: ddBadge,
         staff: function (s) { return staffOf(s || readState()); },
         groupMembers: function (s) { s = s || readState(); return ['柯大河'].concat(staffOf(s).slice(0, 4).map(function (x) { return x[0]; })); },
