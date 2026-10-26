@@ -331,7 +331,7 @@ var PIANCHANG_LISTS = {
     payDelay: 14,                // 片酬几天后到账（在途）
     guaranteeAfter: 3,           // 连着几次收尾成功，片商给保底
     // 社长（10-24 起：自己开公司，租银星的二号棚）：钱是公司自己的，没有拨款；月初自动扣，不签字
-    coStart: 2000000,             // 开局公司账户
+    coStart: 99999999,             // 开局公司账户
     coOffice: 30000,             // 每月 1 号：写字楼 + 剪辑室
     coStaff: [['柯大河', 'AD 兼摄影', 12000], ['化妆和场务（钟点工）', '', 8000]],   // 每月 1 号发的工资（自动扣）
     dirFee: 3000,                // 请尹椿 / 邱德海来导一部
@@ -6766,7 +6766,7 @@ var PIANCHANG_ONLINE = (function () {
       var w = s.wallets[id];
       如果 (w) { s.money = w.money; s.ledger = arr(w.ledger); delete s.wallets[id]; }
       否则 {
-        s.money = id === '导演' ? E.dirStart : id === '社长' ? (E.coStart || 2000000) : E.actStart;
+        s.money = id === '导演' ? E.dirStart : id === '社长' ? (E.coStart || 99999999) : E.actStart;
         s.ledger = [{ day: s.day, kind: 'start', amount: s.money, note: id === '导演' ? '戴晶批下来的导演部预算' : id === '社长' ? '公司开户：开张的本钱' : '入职时卡里的存款' }];
       }
       s.walletOf = id;
